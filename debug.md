@@ -327,3 +327,13 @@
 - 更新 `.gitignore`，排除视频文件、Python 缓存、临时文件等，防止 VPS 与 GPU 服务器之间因中间文件导致同步混乱。
 
 **关键教训**: 在 STL 容器上做 `erase(remove_if(...))` 后，所有之前存储的下标立即失效。涉及下标的操作必须在 erase 之前完成，或改用不依赖下标的方式（如 ID 查找）。
+
+## 28. 2026-04-22 Batch 日志过稀导致无法快速确认是否命中批处理
+**问题**: 使用 `test_v5.html` 做公网和本机性能排查时，前端已经走 `infer_batch`，但后端 batch 利用率日志默认每 50 个 batch 才打印一次，短时测试很难快速确认 GPU 是否真的吃到了 batch。
+**原因**:
+- `BatchInferenceEngine::run_batch()` 中的批利用率统计日志触发条件为 `cnt % 50 == 0`。
+- 对于较短的视频片段或只跑了几十个 batch 的测试，这条日志根本不会出现。
+- 现网服务通常按静默模式启动，排障时更需要尽快在有限日志窗口里看到 batch 命中情况。
+**解决**:
+- 将 `src/processors/batch_inference_engine.cpp` 中的 batch 利用率日志频率从“每 50 个 batch”调整为“每 10 个 batch”。
+- 日志格式保持不变，仍输出 `avg frames/batch` 和 `this batch`，便于直接判断实际 batch 利用率。
