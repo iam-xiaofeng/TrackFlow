@@ -327,3 +327,47 @@
 - 更新 `.gitignore`，排除视频文件、Python 缓存、临时文件等，防止 VPS 与 GPU 服务器之间因中间文件导致同步混乱。
 
 **关键教训**: 在 STL 容器上做 `erase(remove_if(...))` 后，所有之前存储的下标立即失效。涉及下标的操作必须在 erase 之前完成，或改用不依赖下标的方式（如 ID 查找）。
+
+## 28. 人框偏大：1024 模型实际仍按 640 输入运行（前端配置覆盖后端默认值）
+**问题**:
+- 切换到 `models/3class410.onnx`（训练/导出尺寸 1024）后，`person` 类检测框明显偏大；
+- Python 侧推理正常，但 C++ 服务端表现异常；
+- 即使前端采样宽度改到 1024，GPU 服务器日志里仍显示：
+  - `Loaded model 'models/3class410.onnx' (input: 640x640, GPU)`
+
+**原因**:
+1. **前端最初采样过小**：
+   - `test_v5.html` 仍用 `CAPTURE_MAX_WIDTH=640`；
+   - 模块化前端 `frontend/assets/js/inference/app.js` 也只采到 `960`；
+   - 对 `person` 这种小目标，先缩小再送去 1024 模型会进一步放大小框误差。
+
+2. **真正根因在后端配置合并逻辑**：
+   - WebSocket 请求头会带 `config.yolo = { confidence, nms_threshold }`；
+   - `WebSocketServer::build_pipeline_config()` 之前使用：
+     - `effective_config.merge_patch(overrides);`
+   - 这会把服务端默认的整个 `yolo` 对象替换掉，而不仅仅覆盖前端传来的那两个字段；
+   - 结果 `input_width` / `input_height` / `model_path` 等默认项被冲掉；
+   - `YoloDetector` 在动态输入 ONNX 下又回退到类内默认值 `640x640`，最终出现“模型是 1024，实际预处理还是 640”的错配。
+
+**解决**:
+- 前端采样统一提升到 `1024`：
+  - `test_v5.html`
+  - `frontend/assets/js/inference/app.js`
+- 后端显式补齐默认输入尺寸：
+  - `config/config.yaml` 中新增：
+    - `yolo.input_width: 1024`
+    - `yolo.input_height: 1024`
+  - `src/main.cpp` runtime defaults 同步新增 `1024x1024`
+- 修复后端配置合并逻辑：
+  - 将 `effective_config.merge_patch(overrides)` 改为“按 section 递归 merge”；
+  - 当前端只传 `yolo.confidence / nms_threshold` 时，不再覆盖掉 `yolo` 默认配置的其它字段。
+
+**结果**:
+- GPU 服务器启动日志中的 `Server config defaults` 已正确保留：
+  - `input_width: 1024`
+  - `input_height: 1024`
+- 前后端都以 1024 路径运行，`person` 类检测框恢复正常。
+
+**关键教训**:
+- 对带嵌套对象的运行时配置，不能直接对顶层对象做 `merge_patch`，否则前端传一个小字段就可能把后端默认整段配置清空。
+- 排查“模型换了但效果不对”时，要优先核对**实际运行时输入尺寸**，不要只看导出脚本和模型文件名。
