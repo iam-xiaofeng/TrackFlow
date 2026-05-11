@@ -1,0 +1,1555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrackFlow</title>
+    <link rel="icon" href="/favicon.ico?v=20260402" type="image/x-icon">
+    <link rel="shortcut icon" href="/favicon.ico?v=20260402" type="image/x-icon">
+    <style>
+        :root {
+            --bg: #131314;
+            --surface: #1e1f20;
+            --hover: #28292a;
+            --border: #333536;
+            --border-s: #28292a;
+            --text: #e3e3e3;
+            --text2: #8e918f;
+            --text3: #5f6368;
+            --accent: #48f08b;
+            --accent-dim: rgba(72,240,139,0.12);
+            --err: #f28b82;
+            --warn: #fdd663;
+            --pill: 10rem;
+            --rad: 1.2rem;
+            --font: 'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+            --mono: 'SF Mono','Cascadia Code','Consolas',monospace;
+        }
+        *{box-sizing:border-box;margin:0;padding:0}
+        html{font-size:62.5%}
+        body{font-family:var(--font);font-size:1.4rem;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+        /* ── Topbar ── */
+        .topbar{display:flex;align-items:center;justify-content:space-between;padding:1.2rem 2.4rem;border-bottom:1px solid var(--border-s);position:sticky;top:0;background:var(--bg);z-index:100}
+        .logo{font-size:1.8rem;font-weight:600;letter-spacing:-0.02em}.logo span{color:var(--accent)}
+        .topbar-r{display:flex;align-items:center;gap:1.2rem}
+        .conn-dot{width:.8rem;height:.8rem;border-radius:50%;background:var(--err);transition:background .2s}
+        .conn-dot.on{background:var(--accent)}
+        .conn-label{font-size:1.2rem;color:var(--text2)}
+
+        /* ── Buttons ── */
+        .btn{display:inline-flex;align-items:center;gap:.6rem;padding:.7rem 2rem;font-size:1.3rem;font-family:var(--font);font-weight:500;color:var(--text);background:0;border:1px solid var(--border);border-radius:var(--pill);cursor:pointer;transition:all .15s;white-space:nowrap;user-select:none}
+        .btn:hover{background:var(--hover);border-color:var(--text2)}
+        .btn:disabled{opacity:.3;cursor:not-allowed}.btn:disabled:hover{background:0;border-color:var(--border)}
+        .btn-g{background:var(--accent);color:#131314;border-color:var(--accent)}.btn-g:hover{background:#5ff79a;border-color:#5ff79a}
+        .btn-g:disabled{background:var(--hover);color:var(--text3);border-color:var(--border)}.btn-g:disabled:hover{background:var(--hover)}
+        .btn-r{border-color:var(--err);color:var(--err)}.btn-r:hover{background:rgba(242,139,130,.12)}
+        .btn-sm{padding:.4rem 1.4rem;font-size:1.2rem}
+        .btn-icon{width:3.4rem;height:3.4rem;padding:0;justify-content:center;border-radius:50%}
+        .btn-icon svg{width:1.6rem;height:1.6rem;fill:currentColor}
+
+        /* ── Layout: left-right split ── */
+        .main-wrap{display:flex;height:calc(100vh - 4.6rem);overflow:hidden}
+        .left-col{flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--border-s)}
+        .right-col{width:34rem;min-width:22rem;max-width:50rem;display:flex;flex-direction:column;background:var(--surface);overflow:hidden}
+        .resizer{width:5px;cursor:col-resize;background:var(--border-s);flex-shrink:0;transition:background .15s;z-index:10}
+        .resizer:hover,.resizer.active{background:var(--accent)}
+
+        /* ── Player ── */
+        .player-wrap{flex:1;min-height:0;display:flex;flex-direction:column;background:#0a0a0a}
+        .player{flex:1;min-height:0;position:relative;overflow:hidden;cursor:grab;display:flex;align-items:center;justify-content:center}
+        .player:active{cursor:grabbing}
+        .player canvas,.player video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;transform-origin:center center}
+        .player canvas{z-index:2;background:transparent}
+        .player video{z-index:1}
+        .player-placeholder{display:flex;flex-direction:column;align-items:center;gap:1.2rem;color:var(--text3);cursor:pointer;padding:4rem}
+        .player-placeholder svg{width:5rem;height:5rem;opacity:.25}
+        .player-placeholder p{font-size:1.4rem}
+        .player-placeholder small{font-size:1.1rem;opacity:.5}
+        .player.dragover{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-dim)}
+        .player.lane-drawing{cursor:crosshair!important}
+
+        .timeline{display:flex;align-items:center;gap:1.2rem;padding:.8rem 1.6rem;border-top:1px solid var(--border-s);background:var(--bg)}
+        .progress{flex:1;height:.4rem;background:var(--hover);border-radius:.2rem;cursor:pointer;position:relative}
+        .progress-fill{height:100%;background:var(--accent);border-radius:.2rem;width:0%;transition:width .1s linear}
+        .time-label{font-size:1.1rem;font-family:var(--mono);color:var(--text3);min-width:8rem;text-align:right}
+
+        .toolbar{display:flex;align-items:center;gap:1rem;padding:.8rem 1.6rem;border-top:1px solid var(--border-s);background:var(--bg)}
+        .toolbar .sep{flex:1}
+        .fps-sel{background:var(--bg);color:var(--text2);border:1px solid var(--border);border-radius:var(--pill);padding:.4rem 1rem;font-size:1.2rem;font-family:var(--font);cursor:pointer}
+        .live-dot{display:inline-flex;align-items:center;gap:.5rem;font-size:1.1rem;font-weight:500;color:var(--accent);visibility:hidden}
+        .live-dot .d{width:.6rem;height:.6rem;border-radius:50%;background:var(--accent);animation:pulse 1.5s ease-in-out infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+        /* ── Stats bar ── */
+        .stats{display:flex;gap:1px;background:var(--border-s);border-top:1px solid var(--border-s)}
+        .st{flex:1;background:var(--bg);padding:1rem 1.2rem;text-align:center}
+        .st-v{font-size:1.8rem;font-weight:600;font-family:var(--mono);letter-spacing:-.02em}
+        .st-v.hi{color:var(--accent)}
+        .st-l{font-size:.9rem;color:var(--text3);margin-top:.2rem;text-transform:uppercase;letter-spacing:.06em}
+
+        /* ── Log ── */
+        .log-wrap{border-top:1px solid var(--border-s);background:var(--bg)}
+        .log-hdr{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1.6rem;cursor:pointer;user-select:none}
+        .log-hdr span{font-size:1.1rem;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.04em}
+        .log-body{height:12rem;overflow-y:auto;padding:.4rem 0;scrollbar-width:thin;scrollbar-color:var(--hover) transparent;display:none}
+        .log-body.open{display:block}
+        .log-body::-webkit-scrollbar{width:4px}.log-body::-webkit-scrollbar-thumb{background:var(--hover);border-radius:2px}
+        .le{padding:.2rem 1.6rem;font-family:var(--mono);font-size:1.1rem;line-height:1.7;color:var(--text2);display:flex;gap:1rem}
+        .le .ts{color:var(--text3);flex-shrink:0}
+        .le.success .m{color:var(--accent)}.le.error .m{color:var(--err)}.le.warn .m{color:var(--warn)}
+        .log-empty{padding:2rem 1.6rem;text-align:center;color:var(--text3);font-size:1.2rem}
+
+        /* ── Right panel tabs ── */
+        .tab-bar{display:flex;border-bottom:1px solid var(--border-s);background:var(--bg)}
+        .tab-btn{flex:1;padding:.8rem .4rem;font-size:1.1rem;font-family:var(--font);font-weight:500;color:var(--text3);background:0;border:0;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s;text-align:center}
+        .tab-btn:hover{color:var(--text2);background:var(--hover)}
+        .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+        .tab-content{flex:1;overflow-y:auto;padding:1.2rem;scrollbar-width:thin;scrollbar-color:var(--hover) transparent}
+        .tab-pane{display:none}.tab-pane.active{display:block}
+
+        /* ── Form elements ── */
+        .field{margin-bottom:1.2rem}
+        .field label{display:block;font-size:1.1rem;color:var(--text2);margin-bottom:.4rem;font-weight:500}
+        .field input,.field textarea,.field select{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:.8rem;padding:.6rem 1rem;font-size:1.2rem;font-family:var(--font);outline:0;transition:border-color .15s}
+        .field input:focus,.field textarea:focus{border-color:var(--accent)}
+        .field textarea{resize:vertical;min-height:6rem;font-family:var(--mono)}
+        .field-row{display:flex;gap:.8rem}
+        .field-row .field{flex:1}
+        .section-title{font-size:1.2rem;font-weight:600;color:var(--text);margin:1.6rem 0 .8rem;padding-bottom:.4rem;border-bottom:1px solid var(--border-s)}
+        .section-title:first-child{margin-top:0}
+        .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.6rem 0}
+        .toggle-row label{font-size:1.2rem;color:var(--text2)}
+        .toggle{position:relative;width:3.6rem;height:2rem;cursor:pointer}
+        .toggle input{opacity:0;width:0;height:0}
+        .toggle .slider{position:absolute;inset:0;background:var(--border);border-radius:1rem;transition:.2s}
+        .toggle .slider:before{content:'';position:absolute;width:1.4rem;height:1.4rem;left:.3rem;bottom:.3rem;background:#fff;border-radius:50%;transition:.2s}
+        .toggle input:checked+.slider{background:var(--accent)}
+        .toggle input:checked+.slider:before{transform:translateX(1.6rem)}
+
+        /* ── Vehicle list ── */
+        .v-list{list-style:none}
+        .v-item{display:flex;align-items:center;gap:.8rem;padding:.6rem 1rem;border-radius:.8rem;cursor:pointer;transition:background .1s;font-size:1.2rem}
+        .v-item:hover{background:var(--hover)}
+        .v-item.active{background:var(--accent-dim)}
+        .v-item .v-color{width:1rem;height:1rem;border-radius:50%;flex-shrink:0}
+        .v-item .v-id{font-family:var(--mono);font-weight:500}
+        .v-item .v-class{color:var(--text3);font-size:1.1rem;margin-left:auto}
+        .v-detail{margin-top:1.2rem}
+        .v-detail-row{display:flex;justify-content:space-between;padding:.3rem 0;font-size:1.2rem;border-bottom:1px solid var(--border-s)}
+        .v-detail-row .lbl{color:var(--text3)}
+        .v-detail-row .val{font-family:var(--mono);color:var(--text)}
+
+        /* ── Lane items ── */
+        .lane-item{background:var(--bg);border:1px solid var(--border-s);border-radius:.8rem;padding:1rem;margin-bottom:.8rem}
+        .lane-item .lane-hdr{display:flex;align-items:center;gap:.8rem;margin-bottom:.6rem}
+        .lane-item .lane-name{font-weight:600;font-size:1.3rem;flex:1}
+        .lane-item .lane-color{width:1.4rem;height:1.4rem;border-radius:.3rem}
+        .lane-stat-row{display:flex;gap:.4rem;flex-wrap:wrap}
+        .lane-stat{background:var(--hover);border-radius:.6rem;padding:.3rem .8rem;font-size:1rem;color:var(--text2)}
+        .lane-stat b{color:var(--text);font-family:var(--mono)}
+
+        input[type="file"]{display:none}
+        .hidden{display:none!important}
+        .status-dot{display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.4rem}
+        .status-dot.on{background:var(--accent)}.status-dot.off{background:var(--err)}
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <div class="logo">Track<span>Flow</span></div>
+        <div class="topbar-r">
+            <div class="conn-dot" id="cd"></div>
+            <span class="conn-label" id="cl">Disconnected</span>
+            <button class="btn btn-sm" id="cb" onclick="toggleConn()">Connect</button>
+        </div>
+    </header>
+
+    <div class="main-wrap">
+        <!-- ═══ LEFT: Video + Controls ═══ -->
+        <div class="left-col">
+            <div class="player-wrap">
+                <div class="player" id="player"
+                     ondragover="event.preventDefault();this.classList.add('dragover')"
+                     ondragleave="this.classList.remove('dragover')"
+                     ondrop="onDrop(event)">
+                    <div class="player-placeholder" id="ph" onclick="$('fi').click()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                            <rect x="2" y="4" width="20" height="16" rx="3"/>
+                            <path d="M15.6 11.82a.6.6 0 010 1.05l-6 3.6A.6.6 0 019 15.9V8.1a.6.6 0 01.9-.52l6 3.6z"/>
+                        </svg>
+                        <p>Drop video here or click to open</p>
+                        <small>MP4 / WebM / AVI</small>
+                    </div>
+                    <video id="vid" style="display:none"></video>
+                    <canvas id="cvs" style="display:none"></canvas>
+                </div>
+                <input type="file" id="fi" accept="video/*" onchange="loadVideo(this.files[0])">
+                <div class="timeline hidden" id="tl">
+                    <button class="btn-icon btn" onclick="togglePlay()">
+                        <svg viewBox="0 0 24 24" id="ppIco"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <div class="progress" onclick="seek(event)"><div class="progress-fill" id="pf"></div></div>
+                    <span class="time-label" id="tm">0:00 / 0:00</span>
+                </div>
+                <div class="toolbar">
+                    <button class="btn" onclick="$('fi').click()">Open</button>
+                    <button class="btn btn-g" id="btnInfer" disabled onclick="startInfer()">Start</button>
+                    <button class="btn hidden" id="btnPause" onclick="pauseInfer()">Pause</button>
+                    <button class="btn btn-r hidden" id="btnStop" onclick="stopInfer()">Stop</button>
+                    <div class="sep"></div>
+                    <div class="live-dot" id="live"><span class="d"></span>LIVE</div>
+                    <select class="fps-sel" id="fpsSel" title="Target FPS">
+                        <option value="0" selected>All frames</option>
+                        <option value="5">5 fps</option>
+                        <option value="10">10 fps</option>
+                        <option value="15">15 fps</option>
+                        <option value="24">24 fps</option>
+                        <option value="30">30 fps</option>
+                    </select>
+                </div>
+            </div>
+            <div class="stats">
+                <div class="st"><div class="st-v hi" id="sLat">-</div><div class="st-l">Round-trip</div></div>
+                <div class="st"><div class="st-v" id="sNet">-</div><div class="st-l">Network</div></div>
+                <div class="st"><div class="st-v" id="sBack">-</div><div class="st-l">Backend</div></div>
+                <div class="st"><div class="st-v" id="sInf">-</div><div class="st-l">Infer</div></div>
+                <div class="st"><div class="st-v" id="sFps">-</div><div class="st-l">FPS</div></div>
+                <div class="st"><div class="st-v" id="sDet">-</div><div class="st-l">Objects</div></div>
+                <div class="st"><div class="st-v" id="sFrm">0</div><div class="st-l">Frames</div></div>
+            </div>
+            <div class="log-wrap">
+                <div class="log-hdr" onclick="$('logB').classList.toggle('open')"><span>Log</span><button class="btn btn-sm" onclick="event.stopPropagation();clearLog()">Clear</button></div>
+                <div class="log-body open" id="logB"><div class="log-empty" id="logE">Ready</div></div>
+            </div>
+        </div>
+
+        <!-- ═══ RESIZER ═══ -->
+        <div class="resizer" id="resizer"></div>
+
+        <!-- ═══ RIGHT: Tab Panel ═══ -->
+        <div class="right-col">
+            <div class="tab-bar">
+                <button class="tab-btn active" onclick="switchTab('vehicles',this)">Vehicles</button>
+                <button class="tab-btn" onclick="switchTab('settings',this)">Settings</button>
+                <button class="tab-btn" onclick="switchTab('lanes',this)">Lanes</button>
+                <button class="tab-btn" onclick="switchTab('data',this)">Data</button>
+            </div>
+            <div class="tab-content">
+                <!-- ── Tab: Vehicles ── -->
+                <div class="tab-pane active" id="tab-vehicles">
+                    <div class="section-title">Tracked Vehicles</div>
+                    <ul class="v-list" id="vList"></ul>
+                    <div id="vEmpty" style="text-align:center;color:var(--text3);padding:2rem;font-size:1.2rem">No tracked vehicles yet</div>
+                    <div class="v-detail" id="vDetail" style="display:none">
+                        <div class="section-title">Details — <span id="vDetailId"></span></div>
+                        <div id="vDetailBody"></div>
+                    </div>
+                    <div class="field" style="margin-top:1.2rem">
+                        <label>Trajectory length (frames)</label>
+                        <input type="number" id="trajLen" value="100" min="0" max="500" onchange="trajLength=Math.max(0,Math.min(500,+this.value))">
+                    </div>
+                </div>
+
+                <!-- ── Tab: Settings ── -->
+                <div class="tab-pane" id="tab-settings">
+                    <div class="section-title">Homography Matrix</div>
+                    <div class="field">
+                        <label>Matrix (9 values, space/newline separated)</label>
+                        <textarea id="hInput" placeholder="e.g. 1.5e-2 -3.2e-3 12.5 ..."></textarea>
+                    </div>
+                    <div style="display:flex;gap:.6rem;margin-bottom:1.2rem">
+                        <button class="btn btn-sm" onclick="$('hFile').click()">Load File</button>
+                        <input type="file" id="hFile" accept=".txt,.csv,.npy,.json" onchange="loadHFile(this.files[0])">
+                        <button class="btn btn-sm btn-g" onclick="applyHomography()">Apply</button>
+                    </div>
+                    <div class="field-row">
+                        <div class="field"><label>Origin Lon</label><input type="number" id="oriLon" step="any" value="0" placeholder="e.g. 116.397128"></div>
+                        <div class="field"><label>Origin Lat</label><input type="number" id="oriLat" step="any" value="0" placeholder="e.g. 39.916527"></div>
+                    </div>
+                    <div id="hStatus" style="font-size:1.1rem;color:var(--text3);margin-bottom:1.2rem">Homography not set</div>
+
+                    <div class="section-title">Camera Distortion</div>
+                    <div class="field">
+                        <label>Camera params (JSON)</label>
+                        <div style="display:flex;gap:.6rem">
+                            <button class="btn btn-sm" onclick="$('camFile').click()">Load JSON</button>
+                            <input type="file" id="camFile" accept=".json,.yaml,.yml" onchange="loadCamFile(this.files[0])">
+                            <span id="camStatus" style="font-size:1.1rem;color:var(--text3);align-self:center">Not loaded</span>
+                        </div>
+                    </div>
+                    <div class="toggle-row">
+                        <label>Enable undistortion</label>
+                        <label class="toggle"><input type="checkbox" id="undistToggle" disabled onchange="undistortEnabled=this.checked;log(this.checked?'Undistortion enabled':'Undistortion disabled')"><span class="slider"></span></label>
+                    </div>
+                </div>
+
+                <!-- ── Tab: Lanes ── -->
+                <div class="tab-pane" id="tab-lanes">
+                    <div class="section-title">Lane Configuration</div>
+                    <div class="toggle-row" style="margin-bottom:.8rem">
+                        <label>Enable lane detection</label>
+                        <label class="toggle"><input type="checkbox" id="laneToggle" onchange="laneDetectionEnabled=this.checked"><span class="slider"></span></label>
+                    </div>
+                    <div id="laneList"></div>
+                    <button class="btn btn-sm" onclick="addLane()" style="margin-top:.8rem">+ Add Lane</button>
+                </div>
+
+                <!-- ── Tab: Data ── -->
+                <div class="tab-pane" id="tab-data">
+                    <div class="section-title">Export</div>
+                    <button class="btn" onclick="exportVehicleCSV()" style="margin-bottom:.8rem;width:100%">Export Vehicle Data (CSV)</button>
+                    <button class="btn" onclick="exportLaneCSV()" style="margin-bottom:.8rem;width:100%">Export Lane Stats (CSV)</button>
+                    <div class="section-title">Actions</div>
+                    <button class="btn btn-r" onclick="clearAllData()" style="width:100%">Clear All Data</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   TrackFlow v5 — Unified frontend with coordinate transform,
+   distortion correction, lane detection, vehicle tracking
+   ══════════════════════════════════════════════════════════════ */
+const $=id=>document.getElementById(id);
+const vid=$('vid'),cvs=$('cvs'),cx=cvs.getContext('2d');
+const cap=document.createElement('canvas'),capCx=cap.getContext('2d');
+const hdCap=document.createElement('canvas'),hdCapCx=hdCap.getContext('2d');
+let ws=null,streaming=false,paused=false;
+let frameId=0,scale=1,targetFps=10,videoLoaded=false,videoFps=30;
+const MAX_INFLIGHT=8;
+const BATCH_SIZE=4;       // frames per infer_batch message
+const CAPTURE_MAX_WIDTH=1024;
+const JPEG_QUALITY=0.80;
+const WS_BUFFER_HIGH_WATER=2*1024*1024;
+const LANE_UI_UPDATE_INTERVAL=200;
+const VEHICLE_UI_UPDATE_INTERVAL=120;
+let inflightFrames=new Map();
+let nextFrameTime=0,fpsT0=0,fpsCnt=0;
+let pendingCaptures=0;
+let captureInProgress=false;  // Only one captureBatch at a time (shares vid element)
+let displayTime=0;
+let latestDetections=[];
+let latestFrameId=0;
+let latestFrameBitmap=null;
+const displayQueue=[];  // buffered results for smooth playback
+let displayDraining=false;
+let pumpScheduled=false;
+let renderScheduled=false;
+let laneUiDirty=false,laneUiTimer=null,lastLaneUiUpdate=0;
+let vehicleUiDirty=false,vehicleUiTimer=null,lastVehicleUiUpdate=0;
+const colors=['#48f08b','#f28b82','#8ab4f8','#fdd663','#c58af9','#ff8bcb','#36d1a0','#78d9ec','#fcb75e','#a8c7fa'];
+const baseCfg={yolo:{confidence:0.1,nms_threshold:0.45,use_cuda:true},
+    tracker:{enabled:true,track_thresh:0.5,high_thresh:0.6,match_thresh:0.8,min_hits:3,max_time_lost:30}};
+let lastPipelineKey=''; // track pipeline changes to trigger session reset
+
+function buildPipelineConfig(){
+    const pipe=['decoder','yolo'];
+    const pcfg=Object.assign({},baseCfg);
+    if(undistortEnabled&&cameraMatrix&&distCoeffs){
+        pipe.push('undistort');
+        pcfg.undistort={camera_matrix:Array.from(cameraMatrix),dist_coeffs:Array.from(distCoeffs)};
+    }
+    pipe.push('tracker');
+    if(homographyMatrix&&(originLon||originLat)){
+        pipe.push('geo_transform');
+        const geo={homography:Array.from(homographyMatrix),origin_lon:originLon,origin_lat:originLat};
+        if(cameraMatrix&&distCoeffs){
+            geo.camera_matrix=Array.from(cameraMatrix);
+            geo.dist_coeffs=Array.from(distCoeffs);
+        }
+        pcfg.geo_transform=geo;
+    }
+    const key=pipe.join(',');
+    const changed=key!==lastPipelineKey;
+    lastPipelineKey=key;
+    const useCustom=pipe.length>3; // more than decoder+yolo+tracker
+    return {header:useCustom?{pipeline:pipe,config:pcfg}:{config:pcfg}, changed};
+}
+
+/* ── State ── */
+let homographyMatrix=null; // 3x3 flat array [h00,h01,h02,h10,h11,h12,h20,h21,h22]
+let originLon=0,originLat=0;
+let cameraMatrix=null; // [fx,0,cx,0,fy,cy,0,0,1]
+let distCoeffs=null;   // [k1,k2,p1,p2,k3]
+let undistortEnabled=false;
+let laneDetectionEnabled=false;
+let trajLength=100;
+let vehicleTracks={}; // {trackId: {positions:[],groundPositions:[],lonlatPositions:[],velocities:[],classId,className,frameIds:[],lastFrame}}
+let lanes={};          // {laneId: {name,points:[],polygon:null,visible,vehiclesInside:Set,counted:Set,passCount,flowCount,queueCount,flowRate,passTimestamps:[]}}
+let laneCounter=0;
+let drawingLane=null;  // laneId currently being drawn
+let selectedVehicle=null;
+
+function resetRunTrackingState(){
+    vehicleTracks={};
+    selectedVehicle=null;
+    for(const lid in lanes){
+        const lane=lanes[lid];
+        lane.vehiclesInside=new Set();
+        lane.counted=new Set();
+        lane.passCount=0;
+        lane.passTimestamps=[];
+        lane.flowCount=0;
+        lane.queueCount=0;
+        lane.flowRate=0;
+    }
+    updateVehicleList();
+    renderLaneList();
+}
+
+/* ══════════════════════════════════════════
+   §1  COORDINATE TRANSFORM MODULE
+   ══════════════════════════════════════════ */
+
+/** Perspective transform: pixel (px,py) → ground (gx,gy) via 3x3 homography H (flat array) */
+function perspectiveTransform(px,py,H){
+    if(!H)return null;
+    const w=H[6]*px+H[7]*py+H[8];
+    if(Math.abs(w)<1e-12)return null;
+    const gx=(H[0]*px+H[1]*py+H[2])/w;
+    const gy=(H[3]*px+H[4]*py+H[5])/w;
+    return [gx,gy];
+}
+
+/** Undistort a single point using Brown model iterative method (5 iterations) */
+function undistortPoint(px,py,K,dist){
+    if(!K||!dist)return [px,py];
+    const fx=K[0],fy=K[4],cx_=K[2],cy_=K[5];
+    // Normalize
+    let x=(px-cx_)/fx, y=(py-cy_)/fy;
+    const k1=dist[0]||0,k2=dist[1]||0,p1=dist[2]||0,p2=dist[3]||0,k3=dist[4]||0;
+    let x0=x,y0=y;
+    for(let i=0;i<10;i++){
+        const r2=x*x+y*y;
+        const r4=r2*r2,r6=r4*r2;
+        const radial=1+k1*r2+k2*r4+k3*r6;
+        const dx=2*p1*x*y+p2*(r2+2*x*x);
+        const dy=p1*(r2+2*y*y)+2*p2*x*y;
+        x=(x0-dx)/radial;
+        y=(y0-dy)/radial;
+    }
+    return [x*fx+cx_, y*fy+cy_];
+}
+
+/** Image pixel → ground coordinate (with optional undistortion) */
+function imageToGround(px,py){
+    if(!homographyMatrix)return null;
+    let ux=px,uy=py;
+    if(undistortEnabled&&cameraMatrix&&distCoeffs){
+        [ux,uy]=undistortPoint(px,py,cameraMatrix,distCoeffs);
+    }
+    return perspectiveTransform(ux,uy,homographyMatrix);
+}
+
+/** UTM → WGS84 lat/lon. Simplified Karney-based formula. */
+function utmToLatLon(easting,northing,zone,isNorth){
+    const k0=0.9996,a=6378137,f=1/298.257223563;
+    const e=Math.sqrt(2*f-f*f),e2=e*e;
+    const n_=f/(2-f),n2=n_*n_,n3=n2*n_,n4=n3*n_;
+    const A_=a/(1+n_)*(1+n2/4+n4/64);
+    const x=easting-500000;
+    const y=isNorth?northing:northing-10000000;
+    const xi=y/(k0*A_);
+    const eta=x/(k0*A_);
+    const b1=0.5*n_-2/3*n2+37/96*n3;
+    const b2=1/48*n2+1/15*n3;
+    const b3=17/480*n3;
+    let xi_=xi,eta_=eta;
+    for(let j=1;j<=3;j++){
+        const b=[0,b1,b2,b3][j];
+        xi_-=b*Math.sin(2*j*xi)*Math.cosh(2*j*eta);
+        eta_-=b*Math.cos(2*j*xi)*Math.sinh(2*j*eta);
+    }
+    const chi=Math.asin(Math.sin(xi_)/Math.cosh(eta_));
+    const d1=2*n_-2/3*n2-2*n3;
+    const d2=7/3*n2-8/5*n3;
+    const d3=56/15*n3;
+    let lat=chi+d1*Math.sin(2*chi)+d2*Math.sin(4*chi)+d3*Math.sin(6*chi);
+    let lon=Math.atan2(Math.sinh(eta_),Math.cos(xi_));
+    lon=lon*180/Math.PI+(zone*6-183);
+    lat=lat*180/Math.PI;
+    return [lat,lon];
+}
+
+/** WGS84 → UTM */
+function latLonToUtm(lat,lon){
+    const zone=Math.floor((lon+180)/6)+1;
+    const isNorth=lat>=0;
+    const k0=0.9996,a=6378137,f=1/298.257223563;
+    const n_=f/(2-f),n2=n_*n_,n3=n2*n_,n4=n3*n_;
+    const A_=a/(1+n_)*(1+n2/4+n4/64);
+    const latR=lat*Math.PI/180;
+    const lonR=lon*Math.PI/180;
+    const lon0R=(zone*6-183)*Math.PI/180;
+    const t=Math.sinh(Math.atanh(Math.sin(latR))-2*n_/(1+n_)*Math.atanh(2*n_/(1+n_)*Math.sin(latR)));
+    const xi_=Math.atan2(t,Math.cos(lonR-lon0R));
+    const eta_=Math.atanh(Math.sin(lonR-lon0R)/Math.sqrt(1+t*t));
+    const a1=0.5*n_-2/3*n2+5/16*n3;
+    const a2=13/48*n2-3/5*n3;
+    const a3=61/240*n3;
+    let xi=xi_,eta=eta_;
+    for(let j=1;j<=3;j++){
+        const aa=[0,a1,a2,a3][j];
+        xi+=aa*Math.sin(2*j*xi_)*Math.cosh(2*j*eta_);
+        eta+=aa*Math.cos(2*j*xi_)*Math.sinh(2*j*eta_);
+    }
+    const easting=k0*A_*eta+500000;
+    const northing=k0*A_*xi+(isNorth?0:10000000);
+    return [easting,northing,zone,isNorth];
+}
+
+/** Ground coord → WGS84 using origin offset */
+function groundToLatLon(gx,gy){
+    if(!originLon&&!originLat)return null;
+    const [oE,oN,zone,isNorth]=latLonToUtm(originLat,originLon);
+    return utmToLatLon(gx+oE,gy+oN,zone,isNorth);
+}
+
+/* ══════════════════════════════════════════
+   §2  LOG
+   ══════════════════════════════════════════ */
+function log(msg,type){
+    const b=$('logB'),e=$('logE');
+    if(e)e.remove();
+    const d=document.createElement('div');
+    d.className='le'+(type?' '+type:'');
+    const t=new Date(),ts=t.getHours()+':'+(t.getMinutes()<10?'0':'')+t.getMinutes()+':'+(t.getSeconds()<10?'0':'')+t.getSeconds();
+    d.innerHTML='<span class="ts">'+ts+'</span><span class="m">'+msg+'</span>';
+    b.appendChild(d);b.scrollTop=b.scrollHeight;
+}
+function clearLog(){$('logB').innerHTML='<div class="log-empty" id="logE">Ready</div>'}
+
+/* ══════════════════════════════════════════
+   §3  CONNECTION
+   ══════════════════════════════════════════ */
+let pingTimer=null,inflightTimer=null;
+const PING_INTERVAL=15000;    // 15s heartbeat (Cloudflare Tunnel friendly)
+const INFLIGHT_TIMEOUT=30000; // 30s per-request timeout
+let reconnectAttempts=0;
+const MAX_RECONNECT_ATTEMPTS=5;
+
+function toggleConn(){ws&&ws.readyState===1?ws.close():connect()}
+function connect(){
+    const proto=location.protocol==='https:'?'wss':'ws';
+    const url=proto+'://'+location.host+'/ws';
+    log('Connecting to '+url+'...');
+    ws=new WebSocket(url);
+    ws.onopen=()=>{
+        log('Connected','success');setConn(true);
+        reconnectAttempts=0;
+        startPing();
+    };
+    ws.onmessage=e=>onMsg(e.data);
+    ws.onerror=()=>{log('Connection error','error');setConn(false)};
+    ws.onclose=()=>{
+        stopPing();
+        log('Disconnected');setConn(false);
+        if(streaming){
+            // Auto-reconnect during inference
+            if(reconnectAttempts<MAX_RECONNECT_ATTEMPTS){
+                reconnectAttempts++;
+                const delay=Math.min(1000*reconnectAttempts,5000);
+                log('Reconnecting in '+(delay/1000)+'s (attempt '+reconnectAttempts+')...','warn');
+                setTimeout(()=>{
+                    if(streaming){
+                        connect();
+                        // After reconnect, re-send reset and resume pumping
+                        const waitOpen=setInterval(()=>{
+                            if(ws&&ws.readyState===1){
+                                clearInterval(waitOpen);
+                                ws.send(JSON.stringify({type:'reset'}));
+                                schedulePump();
+                            }
+                        },100);
+                        setTimeout(()=>clearInterval(waitOpen),10000);
+                    }
+                },delay);
+            }else{
+                stopInfer();
+                log('Max reconnect attempts reached, inference stopped','error');
+            }
+        }
+    };
+}
+function startPing(){
+    stopPing();
+    pingTimer=setInterval(()=>{
+        if(ws&&ws.readyState===1){
+            ws.send(JSON.stringify({type:'ping',request_id:'keepalive'}));
+        }
+    },PING_INTERVAL);
+    inflightTimer=setInterval(()=>{
+        const now=performance.now();
+        for(const [rid,entry] of inflightFrames){
+            if(now-entry.t0>INFLIGHT_TIMEOUT){
+                log('Request '+rid+' timed out, releasing slot','error');
+                inflightFrames.delete(rid);
+                schedulePump();
+            }
+        }
+    },3000);
+}
+function stopPing(){
+    if(pingTimer){clearInterval(pingTimer);pingTimer=null;}
+    if(inflightTimer){clearInterval(inflightTimer);inflightTimer=null;}
+}
+function setConn(on){
+    $('cd').classList.toggle('on',on);
+    $('cl').textContent=on?'Connected':'Disconnected';
+    $('cb').textContent=on?'Disconnect':'Connect';
+    $('btnInfer').disabled=!on||!videoLoaded;
+}
+
+function updateTimeline(timeOverride){
+    const current=Math.max(0,Math.min(timeOverride??displayTime??vid.currentTime??0,vid.duration||0));
+    $('pf').style.width=(current/vid.duration*100||0)+'%';
+    $('tm').textContent=fmt(current)+' / '+fmt(vid.duration);
+}
+
+function closeFrameBitmap(){
+    if(latestFrameBitmap&&typeof latestFrameBitmap.close==='function')latestFrameBitmap.close();
+    latestFrameBitmap=null;
+}
+
+function schedulePump(){
+    if(pumpScheduled)return;
+    pumpScheduled=true;
+    // Delay lets multiple results accumulate so the next captureBatch
+    // sends a full burst → backend BatchEngine can group them into one GPU batch.
+    setTimeout(()=>{
+        pumpScheduled=false;
+        pumpFrames();
+    },25);
+}
+
+function drainDisplayQueue(){
+    if(displayQueue.length===0){
+        displayDraining=false;
+        // Check completion: queue empty + no more captures + reached video end
+        if(streaming&&!paused&&inflightFrames.size===0&&pendingCaptures===0&&
+           nextFrameTime>=vid.duration-0.02){
+            stopInfer();log('Completed all frames','success');
+        }
+        return;
+    }
+    displayDraining=true;
+    applyDisplayFrame(displayQueue.shift());
+    cx.clearRect(0,0,cvs.width,cvs.height);
+    draw(latestDetections,latestFrameId);
+    if(displayQueue.length>0){
+        setTimeout(drainDisplayQueue,Math.max(16,Math.round(1000/targetFps)));
+    }else{
+        displayDraining=false;
+        // Last frame just shown — check completion
+        if(streaming&&!paused&&inflightFrames.size===0&&pendingCaptures===0&&
+           nextFrameTime>=vid.duration-0.02){
+            stopInfer();log('Completed all frames','success');
+        }
+    }
+}
+
+function scheduleRender(){
+    if(renderScheduled)return;
+    renderScheduled=true;
+    requestAnimationFrame(()=>{
+        renderScheduled=false;
+        renderFrame();
+    });
+}
+
+function clearInflightFrames(){
+    for(const [,entry] of inflightFrames){
+        if(entry?.bitmap&&typeof entry.bitmap.close==='function')entry.bitmap.close();
+    }
+    inflightFrames.clear();
+}
+
+function renderFrame(){
+    if(!videoLoaded)return;
+    cx.clearRect(0,0,cvs.width,cvs.height);
+    draw(latestDetections,latestFrameId);
+}
+
+function loadVideo(f){
+    if(!f)return;
+    closeFrameBitmap();
+    clearInflightFrames();
+    displayQueue.length=0;
+    latestDetections=[];
+    latestFrameId=0;
+    displayTime=0;
+    vid.src=URL.createObjectURL(f);
+    vid.style.display='block';cvs.style.display='none';
+    $('ph').style.display='none';$('tl').classList.remove('hidden');
+    vid.onloadedmetadata=()=>{
+        cap.width=Math.min(vid.videoWidth,CAPTURE_MAX_WIDTH);
+        const s=cap.width/vid.videoWidth;
+        cap.height=Math.round(vid.videoHeight*s);
+        scale=vid.videoWidth/cap.width;
+        cvs.width=vid.videoWidth;cvs.height=vid.videoHeight;
+        hdCap.width=vid.videoWidth;hdCap.height=vid.videoHeight;
+        latestDetections=[];
+        latestFrameId=0;
+        videoLoaded=true;
+        // Detect actual video frame rate via requestVideoFrameCallback
+        if('requestVideoFrameCallback' in vid){
+            let firstMeta=null,cbCount=0;
+            vid.muted=true;vid.play();
+            const cb=(now,meta)=>{
+                if(!firstMeta){firstMeta=meta;cbCount=0;vid.requestVideoFrameCallback(cb);return;}
+                cbCount++;
+                if(cbCount<5){vid.requestVideoFrameCallback(cb);return;}
+                const dt=meta.mediaTime-firstMeta.mediaTime;
+                if(dt>0.01){videoFps=Math.round(cbCount/dt);log('Detected '+videoFps+' fps');}
+                vid.pause();vid.currentTime=0;vid.muted=false;
+            };
+            vid.requestVideoFrameCallback(cb);
+        }
+        scheduleRender();
+        updateTimeline(0);
+        setConn(ws&&ws.readyState===1);
+        log('Loaded: '+f.name+' ('+vid.videoWidth+'x'+vid.videoHeight+', '+fmt(vid.duration)+')','success');
+    };
+}
+function onDrop(e){e.preventDefault();e.currentTarget.classList.remove('dragover');const f=e.dataTransfer?.files?.[0];if(f&&f.type.startsWith('video/'))loadVideo(f)}
+vid.addEventListener('timeupdate',()=>{
+    if(streaming)return; // during inference we control rendering ourselves
+    scheduleRender();
+    updateTimeline(vid.currentTime);
+});
+function togglePlay(){vid.paused?vid.play():vid.pause();ppIco()}
+function seek(e){const r=e.currentTarget.getBoundingClientRect();vid.currentTime=(e.clientX-r.left)/r.width*vid.duration}
+function ppIco(){$('ppIco').innerHTML=vid.paused?'<path d="M8 5v14l11-7z"/>':'<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>'}
+function fmt(s){if(!isFinite(s))return'0:00';const m=Math.floor(s/60),sc=Math.floor(s%60);return m+':'+(sc<10?'0':'')+sc}
+
+/* ══════════════════════════════════════════
+   §5  INFERENCE PIPELINE — Sequential frame processing
+   Video stays paused. We step through frames manually.
+   Batch pipeline is always full (MAX_INFLIGHT frames in flight).
+   ══════════════════════════════════════════ */
+function startInfer(){
+    if(!ws||ws.readyState!==1||!videoLoaded)return;
+    streaming=true;paused=false;frameId=0;
+    resetRunTrackingState();
+    $('sLat').textContent='-';$('sNet').textContent='-';$('sBack').textContent='-';$('sInf').textContent='-';$('sFps').textContent='-';$('sDet').textContent='-';$('sFrm').textContent='0';
+    targetFps=+$('fpsSel').value||videoFps;  // 0 = all frames (use video fps)
+    nextFrameTime=0;
+    clearInflightFrames();
+    displayQueue.length=0;
+    fpsT0=performance.now();fpsCnt=0;
+    pendingCaptures=0;
+    displayTime=0;
+    latestDetections=[];
+    latestFrameId=0;
+    closeFrameBitmap();
+    vid.currentTime=0;vid.pause();ppIco();
+    $('btnInfer').classList.add('hidden');
+    $('btnPause').classList.remove('hidden');$('btnStop').classList.remove('hidden');
+    $('live').style.visibility='visible';
+    vid.style.display='none';cvs.style.display='block';
+    log('Sequential processing started (batch='+BATCH_SIZE+', pipeline='+MAX_INFLIGHT+', every frame)','success');
+    ws.send(JSON.stringify({type:'reset'}));
+    scheduleRender();
+    schedulePump();
+}
+function pauseInfer(){
+    paused=!paused;
+    $('btnPause').textContent=paused?'Resume':'Pause';
+    if(!paused){scheduleRender();schedulePump();}
+}
+function stopInfer(){
+    streaming=false;paused=false;
+    captureInProgress=false;
+    displayDraining=false;
+    pendingCaptures=0;
+    clearInflightFrames();
+    displayQueue.length=0;
+    displayTime=0;
+    latestDetections=[];
+    latestFrameId=0;
+    closeFrameBitmap();
+    vid.pause();
+    $('btnInfer').classList.remove('hidden');
+    $('btnPause').classList.add('hidden');$('btnStop').classList.add('hidden');
+    $('btnPause').textContent='Pause';$('live').style.visibility='hidden';
+    vid.style.display='block';cvs.style.display='none';
+    updateTimeline(vid.currentTime||0);
+    ppIco();log('Stopped at frame '+frameId);
+}
+function pumpFrames(){
+    if(!streaming||paused)return;
+    if(!ws||ws.readyState!==1)return;
+    if(captureInProgress)return;  // vid element is busy — wait
+    if(ws.bufferedAmount>WS_BUFFER_HIGH_WATER){schedulePump();return;}
+    const slots=MAX_INFLIGHT-inflightFrames.size-pendingCaptures;
+    if(slots<BATCH_SIZE)return;
+    const frameDur=1/Math.max(targetFps,1);
+    if(nextFrameTime>=vid.duration-0.02){
+        // Don't stop until inflight done AND displayQueue drained
+        if(inflightFrames.size===0&&pendingCaptures===0&&displayQueue.length===0){
+            stopInfer();log('Completed all frames','success');
+        }
+        return;
+    }
+    const batchCount=Math.min(BATCH_SIZE,Math.floor((vid.duration-0.02-nextFrameTime)/frameDur)+1);
+    if(batchCount<=0)return;
+    pendingCaptures+=batchCount;
+    captureBatch(nextFrameTime,batchCount,frameDur);
+    nextFrameTime+=batchCount*frameDur;
+}
+async function captureBatch(startTime,count,frameDur){
+    captureInProgress=true;
+    // Phase 1: Serial seek + snapshot to canvases.
+    // toBlob and createImageBitmap snapshot at call time, so we can reuse
+    // the same canvas — each call captures the current pixels independently.
+    const captures=[];
+    for(let i=0;i<count;i++){
+        if(!streaming||paused)break;
+        const t=startTime+i*frameDur;
+        vid.currentTime=t;
+        // Wait for seek to complete
+        await new Promise(r=>{
+            if(Math.abs(vid.currentTime-t)<0.005)r();
+            else vid.addEventListener('seeked',r,{once:true});
+        });
+        if(!streaming||paused)break;
+        hdCapCx.drawImage(vid,0,0,hdCap.width,hdCap.height);
+        capCx.drawImage(vid,0,0,cap.width,cap.height);
+        captures.push({
+            time:vid.currentTime,
+            blobP:new Promise(resolve=>cap.toBlob(resolve,'image/jpeg',JPEG_QUALITY)),
+            bitmapP:createImageBitmap(hdCap)
+        });
+    }
+    // Phase 2: Wait for all encodes in parallel
+    const encoded=await Promise.all(captures.map(async c=>{
+        const [blob,bitmap]=await Promise.all([c.blobP,c.bitmapP]);
+        const buf=await blob.arrayBuffer();
+        return {buf,bitmap,time:c.time};
+    }));
+    // Phase 3: Pack all frames into ONE infer_batch message pair.
+    // Backend receives all frames atomically → guaranteed GPU batching.
+    const pc=buildPipelineConfig();
+    const frames=[],sizes=[],buffers=[];
+    for(const r of encoded){
+        if(!streaming||paused||!r.buf){
+            pendingCaptures--;
+            if(r.bitmap&&typeof r.bitmap.close==='function')r.bitmap.close();
+            continue;
+        }
+        pendingCaptures--;
+        frameId++;
+        const rid='f_'+frameId;
+        inflightFrames.set(rid,{t0:performance.now(),captureTime:r.time,bitmap:r.bitmap});
+        frames.push({request_id:rid,frame_id:frameId});
+        sizes.push(r.buf.byteLength);
+        buffers.push(r.buf);
+    }
+    if(frames.length>0){
+        // Single JSON header with all frame metadata
+        ws.send(JSON.stringify(Object.assign({type:'infer_batch',frames,sizes},pc.header)));
+        // Single binary with all JPEGs concatenated
+        const total=sizes.reduce((a,b)=>a+b,0);
+        const combined=new Uint8Array(total);
+        let off=0;
+        for(const b of buffers){combined.set(new Uint8Array(b),off);off+=b.byteLength;}
+        ws.send(combined.buffer);
+    }
+    captureInProgress=false;  // Release vid element — next capture can start
+    schedulePump();
+}
+
+/* ══════════════════════════════════════════
+   §6  RESPONSE HANDLING + VEHICLE TRACKING
+   ══════════════════════════════════════════ */
+function onMsg(data){
+    try{
+        const r=JSON.parse(data);
+        if(r.type==='pong')return;
+        if(r.type==='reset_ack'){scheduleRender();schedulePump();return;}
+        if(r.type==='error'){
+            if(r.request_id){
+                const failed=inflightFrames.get(r.request_id);
+                if(failed?.bitmap&&typeof failed.bitmap.close==='function')failed.bitmap.close();
+                inflightFrames.delete(r.request_id);
+            }
+            log('Error: '+(r.error||'unknown'),'error');
+            schedulePump();
+            return;
+        }
+        // ── batch_result: all frames from one infer_batch arrive together ──
+        if(r.type==='batch_result'&&Array.isArray(r.results)){
+            // Backend wall-clock = max(total_ms) — the slowest frame is what kept us waiting.
+            // Using individual total_ms would inflate Network for early-finishing frames.
+            let batchBackendMs=0;
+            for(const res of r.results){
+                if(res.timing&&res.timing.total_ms>batchBackendMs)batchBackendMs=res.timing.total_ms;
+            }
+            for(const res of r.results){
+                if(res.type==='error'){
+                    if(res.request_id){
+                        const f=inflightFrames.get(res.request_id);
+                        if(f?.bitmap&&typeof f.bitmap.close==='function')f.bitmap.close();
+                        inflightFrames.delete(res.request_id);
+                    }
+                    continue;
+                }
+                const entry=inflightFrames.get(res.request_id);
+                if(!entry)continue;
+                inflightFrames.delete(res.request_id);
+                const lat=performance.now()-entry.t0;
+                const det=res.detections||[],tm=res.timing||{};
+                const currentFrameId=res.frame_id||frameId;
+                // Stash batch-wall-clock so applyDisplayFrame can compute accurate Network
+                displayQueue.push({det,tm,lat,batchBackendMs,currentFrameId,
+                    captureTime:entry.captureTime||0,bitmap:entry.bitmap||null});
+            }
+            if(!displayDraining){log('batch_result: queue='+displayQueue.length+' frames, draining at '+targetFps+'fps');drainDisplayQueue();}
+            schedulePump();
+            return;
+        }
+        // ── Single result (legacy infer_header path) ──
+        if(!r.request_id)return;
+        const entry=inflightFrames.get(r.request_id);
+        if(!entry)return;
+        inflightFrames.delete(r.request_id);
+        const lat=performance.now()-entry.t0;
+        const det=r.detections||[],tm=r.timing||{};
+        const currentFrameId=r.frame_id||frameId;
+        displayQueue.push({det,tm,lat,currentFrameId,
+            captureTime:entry.captureTime||0,bitmap:entry.bitmap||null});
+        if(!displayDraining)drainDisplayQueue();
+        schedulePump();
+    }catch(e){log('Parse error: '+e.message,'error')}
+}
+
+/* Drain one queued frame per rAF for smooth visual playback */
+function applyDisplayFrame(f){
+    displayTime=f.captureTime;
+    latestDetections=f.det;
+    latestFrameId=f.currentFrameId;
+    closeFrameBitmap();
+    latestFrameBitmap=f.bitmap;
+    fpsCnt++;
+    const elapsed=(performance.now()-fpsT0)/1000;
+    const backendMs=f.tm.total_ms||0;
+    // Use batch-wide max(total_ms) for accurate Network: subtracts the time the
+    // backend actually held this batch (including waiting for sibling frames).
+    // Falls back to per-frame total_ms for legacy single-frame results.
+    const referenceBackend=f.batchBackendMs!=null?f.batchBackendMs:backendMs;
+    const networkMs=Math.max(0,f.lat-referenceBackend);
+    $('sLat').textContent=f.lat.toFixed(0);
+    $('sNet').textContent=networkMs.toFixed(0);
+    $('sBack').textContent=backendMs.toFixed(0);
+    $('sInf').textContent=(f.tm.infer_ms||0).toFixed(0);
+    $('sFps').textContent=elapsed>0.5?(fpsCnt/elapsed).toFixed(1):'-';
+    $('sDet').textContent=f.det.length;
+    $('sFrm').textContent=f.currentFrameId;
+
+    for(const d of f.det){
+        if(d.track_id==null||d.track_id<0)continue;
+        const tid=d.track_id;
+        let center;
+        if(d.obb){
+            const p=d.obb;
+            center=[(p[0]+p[2]+p[4]+p[6])/4*scale,(p[1]+p[3]+p[5]+p[7])/4*scale];
+        }else if(d.bbox){
+            center=[(d.bbox[0]+d.bbox[2]/2)*scale,(d.bbox[1]+d.bbox[3]/2)*scale];
+        }else continue;
+
+        if(!vehicleTracks[tid]){
+            vehicleTracks[tid]={classId:d.class_id,className:d.class_name||('Class_'+d.class_id),
+                positions:[],groundPositions:[],lonlatPositions:[],velocities:[],frameIds:[],lastFrame:0};
+        }
+        const tr=vehicleTracks[tid];
+        const prevFrameId=tr.frameIds.length?tr.frameIds[tr.frameIds.length-1]:null;
+        if(prevFrameId!=null&&f.currentFrameId<=prevFrameId)continue;
+        tr.positions.push(center);
+        tr.frameIds.push(f.currentFrameId);
+        tr.lastFrame=f.currentFrameId;
+
+        let gp=null;
+        if(d.ground_x!=null&&d.ground_y!=null){
+            gp=[d.ground_x,d.ground_y];
+        }else{
+            gp=imageToGround(center[0],center[1]);
+        }
+        tr.groundPositions.push(gp);
+        if(d.lon!=null&&d.lat!=null){
+            tr.lonlatPositions.push([d.lat,d.lon]);
+        }else if(gp){
+            const ll=groundToLatLon(gp[0],gp[1]);
+            tr.lonlatPositions.push(ll);
+        }else{
+            tr.lonlatPositions.push(null);
+        }
+
+        const n=tr.positions.length;
+        if(n>=2){
+            const prev=tr.positions[n-2],curr=tr.positions[n-1];
+            const dt=(tr.frameIds[n-1]-tr.frameIds[n-2])/targetFps;
+            if(dt>0){
+                const dxPx=curr[0]-prev[0],dyPx=curr[1]-prev[1];
+                const speedPx=Math.sqrt(dxPx*dxPx+dyPx*dyPx)/dt;
+                const dir=Math.atan2(dyPx,dxPx)*180/Math.PI;
+                let speedMs=null;
+                const gPrev=tr.groundPositions[n-2],gCurr=tr.groundPositions[n-1];
+                if(gPrev&&gCurr){
+                    const dgx=gCurr[0]-gPrev[0],dgy=gCurr[1]-gPrev[1];
+                    speedMs=Math.sqrt(dgx*dgx+dgy*dgy)/dt;
+                }
+                tr.velocities.push({speedPx,speedMs,dir});
+            }else tr.velocities.push(null);
+        }else tr.velocities.push(null);
+
+        if(laneDetectionEnabled){
+            updateLaneStats(tid,center);
+        }
+
+        if(tr.positions.length>trajLength){
+            const cut=tr.positions.length-trajLength;
+            tr.positions.splice(0,cut);
+            tr.groundPositions.splice(0,cut);
+            tr.lonlatPositions.splice(0,cut);
+            tr.velocities.splice(0,cut);
+            tr.frameIds.splice(0,cut);
+        }
+    }
+
+    if(laneDetectionEnabled)updateLaneUI();
+    scheduleVehicleUIUpdate();
+    updateTimeline(displayTime);
+}
+
+/* ══════════════════════════════════════════
+   §7  DRAWING — detections + trajectories + lanes
+   ══════════════════════════════════════════ */
+function draw(dets,currentFrameId){
+    if(latestFrameBitmap){
+        cx.drawImage(latestFrameBitmap,0,0,cvs.width,cvs.height);
+    }else{
+        cx.drawImage(vid,0,0,cvs.width,cvs.height);
+    }
+    const lw=Math.max(1,Math.round(cvs.width/900));
+    const fs=Math.max(11,Math.round(cvs.width/110));
+    cx.lineWidth=lw;cx.font='bold '+fs+'px Inter,sans-serif';
+
+    // Layer 1: Detection boxes
+    const drawDets=[];
+    const tracked=new Map();
+    for(const d of dets){
+        if(d.track_id==null||d.track_id<0){drawDets.push(d);continue;}
+        const id=String(d.track_id);
+        const prev=tracked.get(id);
+        if(!prev||(d.confidence||0)>(prev.confidence||0))tracked.set(id,d);
+    }
+    for(const d of tracked.values())drawDets.push(d);
+
+    for(const d of drawDets){
+        const c=colors[d.class_id%colors.length];
+        cx.strokeStyle=c;
+        if(d.obb){
+            const p=d.obb.map(v=>v*scale);
+            cx.beginPath();cx.moveTo(p[0],p[1]);cx.lineTo(p[2],p[3]);cx.lineTo(p[4],p[5]);cx.lineTo(p[6],p[7]);cx.closePath();cx.stroke();
+            if(d.track_id>=0){
+                const lb='ID:'+d.track_id;
+                const tw=cx.measureText(lb).width+8,th=fs+3;
+                const lx=p[0],ly=p[1]-th-2;
+                cx.fillStyle='rgba(0,0,0,0.65)';cx.fillRect(lx,ly,tw,th);
+                cx.fillStyle='#fff';cx.fillText(lb,lx+4,ly+th-3);
+            }
+        }else if(d.bbox){
+            const x=d.bbox[0]*scale,y=d.bbox[1]*scale,w=d.bbox[2]*scale,h=d.bbox[3]*scale;
+            cx.strokeRect(x,y,w,h);
+            if(d.track_id>=0){
+                const lb='ID:'+d.track_id;
+                const tw=cx.measureText(lb).width+8,th=fs+3;
+                const lx=x,ly=y-th-2;
+                cx.fillStyle='rgba(0,0,0,0.65)';cx.fillRect(lx,ly,tw,th);
+                cx.fillStyle='#fff';cx.fillText(lb,lx+4,ly+th-3);
+            }
+        }
+    }
+
+    // Layer 2: Trajectories
+    if(trajLength>0){
+        for(const tid in vehicleTracks){
+            const tr=vehicleTracks[tid];
+            if(!tr.positions.length)continue;
+            if(currentFrameId-tr.lastFrame>10)continue; // disappeared
+            const c=colors[tr.classId%colors.length];
+            const pts=tr.positions;
+            const fids=tr.frameIds;
+            const start=Math.max(0,pts.length-trajLength);
+            cx.strokeStyle=c;cx.lineWidth=Math.max(1,lw-1);
+            cx.beginPath();
+            let moved=false;
+            for(let i=start;i<pts.length;i++){
+                if(i>start){
+                    const gap=fids[i]-fids[i-1];
+                    if(gap>3||gap<=0){cx.moveTo(pts[i][0],pts[i][1]);moved=true;continue}
+                }
+                if(!moved){cx.moveTo(pts[i][0],pts[i][1]);moved=true}
+                else cx.lineTo(pts[i][0],pts[i][1]);
+            }
+            cx.stroke();
+            if(tr.lastFrame===currentFrameId&&pts.length>0){
+                const last=pts[pts.length-1];
+                cx.beginPath();cx.arc(last[0],last[1],5,0,Math.PI*2);cx.fillStyle=c;cx.fill();
+                cx.strokeStyle='#fff';cx.lineWidth=2;cx.stroke();
+            }
+        }
+        cx.lineWidth=lw;
+    }
+
+    drawLanes();
+}
+
+function drawLanes(){
+    for(const lid in lanes){
+        const lane=lanes[lid];
+        if(!lane.visible||!lane.polygon||lane.polygon.length<3)continue;
+        const pts=lane.polygon;
+        cx.save();
+        cx.globalAlpha=0.2;
+        cx.fillStyle=lane.color||'#ff8000';
+        cx.beginPath();cx.moveTo(pts[0][0],pts[0][1]);
+        for(let i=1;i<pts.length;i++)cx.lineTo(pts[i][0],pts[i][1]);
+        cx.closePath();cx.fill();
+        cx.restore();
+        cx.strokeStyle=lane.color||'#ff8000';cx.lineWidth=2;
+        cx.beginPath();cx.moveTo(pts[0][0],pts[0][1]);
+        for(let i=1;i<pts.length;i++)cx.lineTo(pts[i][0],pts[i][1]);
+        cx.closePath();cx.stroke();
+        for(const p of lane.points){
+            cx.beginPath();cx.arc(p[0],p[1],4,0,Math.PI*2);cx.fillStyle='#0f0';cx.fill();
+        }
+        if(pts.length>0){
+            const fs2=Math.max(14,Math.round(cvs.width/60));
+            cx.font='bold '+fs2+'px Inter,sans-serif';
+            cx.fillStyle=lane.color||'#ff8000';
+            cx.fillText(lane.name,pts[0][0],pts[0][1]-10);
+        }
+    }
+    if(drawingLane&&lanes[drawingLane]){
+        const pts=lanes[drawingLane].points;
+        cx.fillStyle='#0f0';
+        for(const p of pts){cx.beginPath();cx.arc(p[0],p[1],5,0,Math.PI*2);cx.fill();}
+        if(pts.length>1){
+            cx.strokeStyle='#0f0';cx.lineWidth=1;cx.setLineDash([6,4]);
+            cx.beginPath();cx.moveTo(pts[0][0],pts[0][1]);
+            for(let i=1;i<pts.length;i++)cx.lineTo(pts[i][0],pts[i][1]);
+            cx.stroke();cx.setLineDash([]);
+        }
+    }
+}
+
+/** Draw lane overlay — works even when not streaming (captures video frame to canvas) */
+function drawLaneOverlay(){
+    if(streaming)return; // during inference, draw() handles it
+    if(!videoLoaded)return;
+    const wasHidden=cvs.style.display==='none';
+    if(wasHidden){
+        if(!cvs.width||!cvs.height){
+            cvs.width=vid.videoWidth||640;
+            cvs.height=vid.videoHeight||480;
+        }
+        vid.style.display='none';
+        cvs.style.display='block';
+    }
+    cx.drawImage(vid,0,0,cvs.width,cvs.height);
+    drawLanes();
+}
+
+/* ══════════════════════════════════════════
+   §8  LANE DETECTION
+   ══════════════════════════════════════════ */
+function pointInPolygon(px,py,poly){
+    let inside=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+        const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];
+        if((yi>py)!==(yj>py)&&px<(xj-xi)*(py-yi)/(yj-yi)+xi)inside=!inside;
+    }
+    return inside;
+}
+
+function updateLaneStats(vehicleId,center){
+    for(const lid in lanes){
+        const lane=lanes[lid];
+        if(!lane.visible||!lane.polygon||lane.polygon.length<3)continue;
+        const isInside=pointInPolygon(center[0],center[1],lane.polygon);
+        if(isInside){
+            lane.vehiclesInside.add(vehicleId);
+            if(!lane.counted.has(vehicleId)){
+                lane.counted.add(vehicleId);
+                lane.passCount++;
+                lane.passTimestamps.push(performance.now());
+            }
+        }else{
+            lane.vehiclesInside.delete(vehicleId);
+        }
+        lane.flowCount=lane.vehiclesInside.size;
+        let qc=0;
+        for(const vid of lane.vehiclesInside){
+            if(isVehicleStationary(vid))qc++;
+        }
+        lane.queueCount=qc;
+        const now=performance.now();
+        const window=5*60*1000;
+        lane.passTimestamps=lane.passTimestamps.filter(t=>now-t<window);
+        lane.flowRate=lane.passTimestamps.length>0?lane.passTimestamps.length/(window/3600000):0;
+    }
+}
+
+function isVehicleStationary(vid,minFrames=30,maxDisp=15){
+    const tr=vehicleTracks[vid];
+    if(!tr||tr.positions.length<minFrames)return false;
+    const recent=tr.positions.slice(-minFrames);
+    let total=0;
+    for(let i=1;i<recent.length;i++){
+        const dx=recent[i][0]-recent[i-1][0],dy=recent[i][1]-recent[i-1][1];
+        total+=Math.sqrt(dx*dx+dy*dy);
+    }
+    return total<maxDisp;
+}
+
+const laneColors=['#ff8000','#00bfff','#ff4081','#76ff03','#e040fb','#ffea00','#00e5ff','#ff6e40'];
+function addLane(){
+    laneCounter++;
+    const lid='lane_'+laneCounter;
+    lanes[lid]={
+        name:'Lane '+laneCounter,
+        points:[],polygon:null,visible:false,
+        vehiclesInside:new Set(),counted:new Set(),
+        passCount:0,passTimestamps:[],flowCount:0,queueCount:0,flowRate:0,
+        color:laneColors[(laneCounter-1)%laneColors.length]
+    };
+    renderLaneList();
+    log('Added '+lanes[lid].name+'. Click "Draw" then click on video to add polygon vertices.','success');
+}
+
+function startDrawLane(lid){
+    if(!lanes[lid])return;
+    if(!videoLoaded){log('Load a video first before drawing lanes','warn');return;}
+    drawingLane=lid;
+    lanes[lid].points=[];
+    lanes[lid].polygon=null;
+    lanes[lid].visible=false;
+    $('player').classList.add('lane-drawing');
+    log('Drawing '+lanes[lid].name+': click on video to add points. Click "Done" when finished.');
+    renderLaneList();
+}
+
+function finishDrawLane(lid){
+    if(!lanes[lid])return;
+    if(lanes[lid].points.length<3){
+        log('Need at least 3 points for a lane polygon','warn');
+        return;
+    }
+    lanes[lid].polygon=[...lanes[lid].points];
+    lanes[lid].visible=true;
+    drawingLane=null;
+    $('player').classList.remove('lane-drawing');
+    log(lanes[lid].name+' defined with '+lanes[lid].points.length+' points','success');
+    renderLaneList();
+}
+
+function resetLane(lid){
+    if(!lanes[lid])return;
+    lanes[lid].points=[];lanes[lid].polygon=null;lanes[lid].visible=false;
+    lanes[lid].vehiclesInside=new Set();lanes[lid].counted=new Set();
+    lanes[lid].passCount=0;lanes[lid].passTimestamps=[];lanes[lid].flowCount=0;lanes[lid].queueCount=0;lanes[lid].flowRate=0;
+    if(drawingLane===lid){drawingLane=null;$('player').classList.remove('lane-drawing');}
+    renderLaneList();
+}
+
+function deleteLane(lid){
+    if(drawingLane===lid){drawingLane=null;$('player').classList.remove('lane-drawing');}
+    delete lanes[lid];
+    renderLaneList();
+}
+
+function renderLaneList(){
+    const el=$('laneList');
+    el.innerHTML='';
+    for(const lid in lanes){
+        const l=lanes[lid];
+        const isDrawing=drawingLane===lid;
+        const div=document.createElement('div');
+        div.className='lane-item';
+        div.innerHTML=`
+            <div class="lane-hdr">
+                <div class="lane-color" style="background:${l.color}"></div>
+                <span class="lane-name">${l.name}</span>
+                ${isDrawing?`<button class="btn btn-sm btn-g" onclick="finishDrawLane('${lid}')">Done (${l.points.length}pts)</button>`
+                    :`<button class="btn btn-sm" onclick="startDrawLane('${lid}')">Draw</button>`}
+                <button class="btn btn-sm" onclick="resetLane('${lid}')">Reset</button>
+                <button class="btn btn-sm btn-r" onclick="deleteLane('${lid}')">Del</button>
+            </div>
+            <div class="lane-stat-row">
+                <div class="lane-stat">In: <b>${l.flowCount}</b></div>
+                <div class="lane-stat">Total: <b>${l.passCount}</b></div>
+                <div class="lane-stat">Queue: <b>${l.queueCount}</b></div>
+                <div class="lane-stat">Rate: <b>${l.flowRate.toFixed(0)}</b> veh/h</div>
+            </div>`;
+        el.appendChild(div);
+    }
+}
+
+function updateLaneUI(){
+    laneUiDirty=true;
+    if(laneUiTimer)return;
+    const now=performance.now();
+    const wait=Math.max(0,LANE_UI_UPDATE_INTERVAL-(now-lastLaneUiUpdate));
+    laneUiTimer=setTimeout(()=>{
+        laneUiTimer=null;
+        if(!laneUiDirty)return;
+        laneUiDirty=false;
+        lastLaneUiUpdate=performance.now();
+        renderLaneList();
+    },wait);
+}
+
+function scheduleVehicleUIUpdate(){
+    vehicleUiDirty=true;
+    if(vehicleUiTimer)return;
+    const now=performance.now();
+    const wait=Math.max(0,VEHICLE_UI_UPDATE_INTERVAL-(now-lastVehicleUiUpdate));
+    vehicleUiTimer=setTimeout(()=>{
+        vehicleUiTimer=null;
+        if(!vehicleUiDirty)return;
+        vehicleUiDirty=false;
+        lastVehicleUiUpdate=performance.now();
+        updateVehicleList();
+    },wait);
+}
+
+/* ══════════════════════════════════════════
+   §9  VEHICLE UI
+   ══════════════════════════════════════════ */
+function updateVehicleList(){
+    const list=$('vList');
+    const ids=Object.keys(vehicleTracks).sort((a,b)=>+a-+b);
+    $('vEmpty').style.display=ids.length?'none':'block';
+    // Only rebuild if count changed
+    if(list.childElementCount!==ids.length){
+        list.innerHTML='';
+        for(const tid of ids){
+            const tr=vehicleTracks[tid];
+            const li=document.createElement('li');
+            li.className='v-item'+(selectedVehicle==tid?' active':'');
+            li.onclick=()=>{selectedVehicle=selectedVehicle==tid?null:tid;updateVehicleList()};
+            li.innerHTML=`<div class="v-color" style="background:${colors[tr.classId%colors.length]}"></div>
+                <span class="v-id">ID:${tid}</span><span class="v-class">${tr.className}</span>`;
+            list.appendChild(li);
+        }
+    }
+    // Update detail panel
+    if(selectedVehicle&&vehicleTracks[selectedVehicle]){
+        const tr=vehicleTracks[selectedVehicle];
+        $('vDetail').style.display='block';
+        $('vDetailId').textContent='ID:'+selectedVehicle;
+        const rows=[];
+        rows.push(['Class',tr.className]);
+        rows.push(['Track Points',''+tr.positions.length]);
+        if(tr.positions.length){
+            const p=tr.positions[tr.positions.length-1];
+            rows.push(['Pixel X',p[0].toFixed(1)]);
+            rows.push(['Pixel Y',p[1].toFixed(1)]);
+        }
+        if(tr.groundPositions.length){
+            const gp=tr.groundPositions[tr.groundPositions.length-1];
+            if(gp){rows.push(['Ground X (m)',gp[0].toFixed(3)]);rows.push(['Ground Y (m)',gp[1].toFixed(3)]);}
+        }
+        if(tr.lonlatPositions.length){
+            const ll=tr.lonlatPositions[tr.lonlatPositions.length-1];
+            if(ll){rows.push(['Longitude',ll[1].toFixed(8)]);rows.push(['Latitude',ll[0].toFixed(8)]);}
+        }
+        if(tr.velocities.length){
+            const v=tr.velocities[tr.velocities.length-1];
+            if(v){
+                rows.push(['Speed (px/s)',v.speedPx.toFixed(1)]);
+                if(v.speedMs!=null){rows.push(['Speed (m/s)',v.speedMs.toFixed(2)]);rows.push(['Speed (km/h)',(v.speedMs*3.6).toFixed(1)]);}
+                rows.push(['Direction',v.dir.toFixed(1)+'°']);
+            }
+        }
+        $('vDetailBody').innerHTML=rows.map(r=>`<div class="v-detail-row"><span class="lbl">${r[0]}</span><span class="val">${r[1]}</span></div>`).join('');
+    }else{
+        $('vDetail').style.display='none';
+    }
+}
+
+/* ══════════════════════════════════════════
+   §10  SETTINGS — HOMOGRAPHY & CAMERA
+   ══════════════════════════════════════════ */
+function applyHomography(){
+    const text=$('hInput').value.trim();
+    const nums=text.split(/[\s,;]+/).map(Number).filter(n=>isFinite(n));
+    if(nums.length!==9){log('Homography needs exactly 9 numbers, got '+nums.length,'error');return;}
+    homographyMatrix=nums;
+    originLon=+$('oriLon').value;
+    originLat=+$('oriLat').value;
+    $('hStatus').textContent='Homography applied. Origin: '+originLon.toFixed(6)+', '+originLat.toFixed(6);
+    $('hStatus').style.color='var(--accent)';
+    log('Homography matrix applied. Origin: ('+originLon+', '+originLat+')','success');
+}
+
+function loadHFile(f){
+    if(!f)return;
+    const reader=new FileReader();
+    reader.onload=e=>{
+        $('hInput').value=e.target.result;
+        log('Loaded homography file: '+f.name);
+    };
+    reader.readAsText(f);
+}
+
+function loadCamFile(f){
+    if(!f)return;
+    const reader=new FileReader();
+    reader.onload=e=>{
+        try{
+            const data=JSON.parse(e.target.result);
+            const K=data.camera_matrix||data.K;
+            const dist=data.dist_coeffs||data.dist;
+            if(!K||!dist)throw new Error('Missing camera_matrix/K or dist_coeffs/dist');
+            cameraMatrix=Array.isArray(K[0])?K.flat():K;
+            distCoeffs=Array.isArray(dist[0])?dist.flat():dist;
+            $('camStatus').textContent='Loaded (K:'+cameraMatrix.length+', dist:'+distCoeffs.length+')';
+            $('camStatus').style.color='var(--accent)';
+            $('undistToggle').disabled=false;
+            log('Camera params loaded from '+f.name,'success');
+        }catch(err){log('Failed to load camera params: '+err.message,'error');}
+    };
+    reader.readAsText(f);
+}
+
+/* ══════════════════════════════════════════
+   §11  TABS
+   ══════════════════════════════════════════ */
+function switchTab(name,btn){
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab-'+name).classList.add('active');
+}
+
+/* ══════════════════════════════════════════
+   §12  DATA EXPORT
+   ══════════════════════════════════════════ */
+function exportVehicleCSV(){
+    const rows=[['track_id','frame_id','pixel_x','pixel_y','ground_x','ground_y','lat','lon','speed_px_s','speed_m_s','speed_km_h','direction']];
+    for(const tid in vehicleTracks){
+        const tr=vehicleTracks[tid];
+        for(let i=0;i<tr.positions.length;i++){
+            const p=tr.positions[i];
+            const gp=tr.groundPositions[i];
+            const ll=tr.lonlatPositions[i];
+            const v=tr.velocities[i];
+            rows.push([tid,tr.frameIds[i],p[0].toFixed(1),p[1].toFixed(1),
+                gp?gp[0].toFixed(3):'',gp?gp[1].toFixed(3):'',
+                ll?ll[0].toFixed(8):'',ll?ll[1].toFixed(8):'',
+                v?v.speedPx.toFixed(1):'',v&&v.speedMs!=null?v.speedMs.toFixed(2):'',
+                v&&v.speedMs!=null?(v.speedMs*3.6).toFixed(1):'',
+                v?v.dir.toFixed(1):'']);
+        }
+    }
+    downloadCSV(rows,'trackflow_vehicles.csv');
+    log('Exported '+rows.length+' rows','success');
+}
+
+function exportLaneCSV(){
+    const rows=[['lane_id','name','pass_count','current_in_lane','queue_count','flow_rate_veh_h']];
+    for(const lid in lanes){
+        const l=lanes[lid];
+        rows.push([lid,l.name,l.passCount,l.flowCount,l.queueCount,l.flowRate.toFixed(1)]);
+    }
+    downloadCSV(rows,'trackflow_lanes.csv');
+    log('Exported lane stats','success');
+}
+
+function downloadCSV(rows,filename){
+    const csv=rows.map(r=>r.join(',')).join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);a.download=filename;a.click();
+}
+
+function clearAllData(){
+    vehicleTracks={};selectedVehicle=null;
+    for(const lid in lanes)resetLane(lid);
+    updateVehicleList();
+    log('All data cleared');
+}
+
+/* ══════════════════════════════════════════
+   §13  PAN & ZOOM + LANE CLICK
+   ══════════════════════════════════════════ */
+!function(){
+    const el=$('player');let s=1,px=0,py=0,pan=false,sx,sy;
+    function tr(){const t=cvs.style.display!=='none'?cvs:vid;t.style.transform='translate('+px+'px,'+py+'px) scale('+s+')'}
+    el.addEventListener('wheel',e=>{e.preventDefault();const r=el.getBoundingClientRect(),xs=(e.clientX-r.left-px)/s,ys=(e.clientY-r.top-py)/s;s*=e.deltaY<0?1.12:.89;s=Math.min(Math.max(.5,s),12);px=e.clientX-r.left-xs*s;py=e.clientY-r.top-ys*s;tr()});
+    el.addEventListener('mousedown',e=>{
+        if(e.target.closest('.player-placeholder'))return;
+        if(drawingLane){
+            e.preventDefault();e.stopPropagation();
+            // Determine which element is visible (canvas or video)
+            const target=cvs.style.display!=='none'?cvs:vid;
+            if(target.style.display==='none'){log('Load a video first to draw lane points','warn');return;}
+            const tRect=target.getBoundingClientRect();
+            if(tRect.width===0||tRect.height===0)return;
+            // Map click to original video/canvas pixel coordinates
+            const scaleX=(cvs.width||vid.videoWidth||tRect.width)/tRect.width;
+            const scaleY=(cvs.height||vid.videoHeight||tRect.height)/tRect.height;
+            const cx_=(e.clientX-tRect.left)*scaleX;
+            const cy_=(e.clientY-tRect.top)*scaleY;
+            if(cx_>=0&&cy_>=0){
+                lanes[drawingLane].points.push([cx_,cy_]);
+                renderLaneList();
+                log(lanes[drawingLane].name+': added point ('+cx_.toFixed(0)+', '+cy_.toFixed(0)+') — '+lanes[drawingLane].points.length+' pts');
+                // Immediately draw on screen
+                drawLaneOverlay();
+            }
+            return;
+        }
+        if(e.button===0){pan=true;sx=e.clientX-px;sy=e.clientY-py;el.style.cursor='grabbing'}
+    });
+    window.addEventListener('mouseup',()=>{pan=false;el.style.cursor=drawingLane?'crosshair':'grab'});
+    window.addEventListener('mousemove',e=>{if(!pan)return;e.preventDefault();px=e.clientX-sx;py=e.clientY-sy;tr()});
+    el.addEventListener('dblclick',()=>{s=1;px=0;py=0;tr()});
+}();
+
+/* Global drop */
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer?.files?.[0];if(f&&f.type.startsWith('video/'))loadVideo(f)});
+
+/* Init */
+renderLaneList();
+
+/* ── Resizer (drag to resize right panel) ── */
+!function(){
+    const resizer=$('resizer'),right=document.querySelector('.right-col');
+    let startX,startW;
+    resizer.addEventListener('mousedown',e=>{
+        e.preventDefault();
+        startX=e.clientX;startW=right.offsetWidth;
+        resizer.classList.add('active');
+        document.addEventListener('mousemove',onMove);
+        document.addEventListener('mouseup',onUp);
+    });
+    function onMove(e){
+        const dx=startX-e.clientX;
+        const newW=Math.min(Math.max(startW+dx,220),window.innerWidth*0.6);
+        right.style.width=newW+'px';
+    }
+    function onUp(){
+        resizer.classList.remove('active');
+        document.removeEventListener('mousemove',onMove);
+        document.removeEventListener('mouseup',onUp);
+    }
+}();
+</script>
+</body>
+</html>

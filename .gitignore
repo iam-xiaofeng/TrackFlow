@@ -4,7 +4,9 @@ cmake-build-*/
 
 # 第三方库（太大，让用户自己下载）
 third_party/onnxruntime*/
+third_party/onnxruntime*
 third_party/uWebSockets/
+third_party/uWebSockets
 
 # 模型文件（太大）
 models/*.onnx
@@ -19,6 +21,9 @@ models/*.pt
 .vscode/
 *.swp
 .codex
+
+# Local index/cache
+.cache/
 
 # 系统文件
 .DS_Store
@@ -37,3 +42,9 @@ __pycache__/
 
 # 临时图片
 image.png
+
+# Local runtime logs
+trackflow.log
+
+# Optional local dashboard aliases
+trackflow_dashboard_local*.html
