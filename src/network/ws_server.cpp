@@ -43,7 +43,7 @@ using WsHandle = uWS::WebSocket<false, true, PerSocketData>;
 
 namespace {
 
-constexpr auto kPendingHeaderTimeout = std::chrono::seconds(10);
+constexpr auto kPendingHeaderTimeout = std::chrono::seconds(60);
 
 void defer_send_text(uWS::Loop *loop,
                      const std::shared_ptr<ConnectionState> &connection,
@@ -371,7 +371,14 @@ json WebSocketServer::build_pipeline_config(const json &request) const {
   }
 
   json overrides = sanitize_client_overrides(request);
-  effective_config.merge_patch(overrides);
+  for (auto it = overrides.begin(); it != overrides.end(); ++it) {
+    if (effective_config.contains(it.key()) && effective_config[it.key()].is_object() &&
+        it.value().is_object()) {
+      effective_config[it.key()].merge_patch(it.value());
+    } else {
+      effective_config[it.key()] = it.value();
+    }
+  }
 
   if (overrides.contains("undistort")) {
     features["undistort"] = true;

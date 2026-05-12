@@ -21,7 +21,9 @@ yolo_edge::json build_server_config(const yolo_edge::Config &config) {
   json server_config = {
       {"defaults",
        {{"yolo",
-         {{"model_path", "models/3class4batch.onnx"},
+         {{"model_path", "models/3class410.onnx"},
+          {"input_width", 1024},
+          {"input_height", 1024},
           {"confidence", 0.5},
           {"nms_threshold", 0.45},
           {"is_obb", true},

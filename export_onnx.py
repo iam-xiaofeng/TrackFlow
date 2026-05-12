@@ -2,7 +2,7 @@
 YOLO ONNX 导出脚本 (支持动态 batch)
 
 用法：
-    python export_onnx.py --model your_model.pt --imgsz 1280
+    python export_onnx.py --model your_model.pt --imgsz 1024
 
 关键: 必须使用 dynamic=True 才能支持 BatchInferenceEngine 的多帧并行推理
 """
@@ -10,7 +10,7 @@ YOLO ONNX 导出脚本 (支持动态 batch)
 from ultralytics import YOLO
 import argparse
 
-def export_onnx(model_path, imgsz=1280):
+def export_onnx(model_path, imgsz=1024):
     """
     导出YOLO模型为ONNX格式 (支持动态batch)
 
@@ -46,7 +46,7 @@ def export_onnx(model_path, imgsz=1280):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True, help="Path to .pt model")
-    parser.add_argument("--imgsz", type=int, default=1280, help="Input image size")
+    parser.add_argument("--imgsz", type=int, default=1024, help="Input image size")
 
     args = parser.parse_args()
     export_onnx(args.model, args.imgsz)

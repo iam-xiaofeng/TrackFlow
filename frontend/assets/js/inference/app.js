@@ -19,6 +19,7 @@ let frameId = 0
 let uploadScale = 1
 let targetFps = 10
 let videoLoaded = false
+const CAPTURE_MAX_WIDTH = 1024
 const MAX_INFLIGHT = 6
 const inflightFrames = new Map()
 const expiredRequests = new Set()
@@ -162,7 +163,7 @@ function loadVideo(file) {
   $('ph').style.display = 'none'
   $('tl').classList.remove('hidden')
   vid.onloadedmetadata = () => {
-    cap.width = Math.min(vid.videoWidth, 960)
+    cap.width = Math.min(vid.videoWidth, CAPTURE_MAX_WIDTH)
     const captureScale = cap.width / vid.videoWidth
     cap.height = Math.round(vid.videoHeight * captureScale)
     uploadScale = vid.videoWidth / cap.width

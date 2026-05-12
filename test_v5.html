@@ -319,8 +319,8 @@ const hdCap=document.createElement('canvas'),hdCapCx=hdCap.getContext('2d');
 let ws=null,streaming=false,paused=false;
 let frameId=0,scale=1,targetFps=10,videoLoaded=false,videoFps=30;
 const MAX_INFLIGHT=8;
-const BATCH_SIZE=4;       // frames per infer_batch message
-const CAPTURE_MAX_WIDTH=640;
+const BATCH_SIZE=6;       // frames per infer_batch message
+const CAPTURE_MAX_WIDTH=1024;
 const JPEG_QUALITY=0.80;
 const WS_BUFFER_HIGH_WATER=2*1024*1024;
 const LANE_UI_UPDATE_INTERVAL=200;
@@ -625,7 +625,15 @@ function schedulePump(){
 }
 
 function drainDisplayQueue(){
-    if(displayQueue.length===0){displayDraining=false;return;}
+    if(displayQueue.length===0){
+        displayDraining=false;
+        // Check completion: queue empty + no more captures + reached video end
+        if(streaming&&!paused&&inflightFrames.size===0&&pendingCaptures===0&&
+           nextFrameTime>=vid.duration-0.02){
+            stopInfer();log('Completed all frames','success');
+        }
+        return;
+    }
     displayDraining=true;
     applyDisplayFrame(displayQueue.shift());
     cx.clearRect(0,0,cvs.width,cvs.height);
@@ -634,6 +642,11 @@ function drainDisplayQueue(){
         setTimeout(drainDisplayQueue,Math.max(16,Math.round(1000/targetFps)));
     }else{
         displayDraining=false;
+        // Last frame just shown — check completion
+        if(streaming&&!paused&&inflightFrames.size===0&&pendingCaptures===0&&
+           nextFrameTime>=vid.duration-0.02){
+            stopInfer();log('Completed all frames','success');
+        }
     }
 }
 
@@ -774,7 +787,10 @@ function pumpFrames(){
     if(slots<BATCH_SIZE)return;
     const frameDur=1/Math.max(targetFps,1);
     if(nextFrameTime>=vid.duration-0.02){
-        if(inflightFrames.size===0&&pendingCaptures===0){stopInfer();log('Completed all frames','success');}
+        // Don't stop until inflight done AND displayQueue drained
+        if(inflightFrames.size===0&&pendingCaptures===0&&displayQueue.length===0){
+            stopInfer();log('Completed all frames','success');
+        }
         return;
     }
     const batchCount=Math.min(BATCH_SIZE,Math.floor((vid.duration-0.02-nextFrameTime)/frameDur)+1);
@@ -865,6 +881,12 @@ function onMsg(data){
         }
         // ── batch_result: all frames from one infer_batch arrive together ──
         if(r.type==='batch_result'&&Array.isArray(r.results)){
+            // Backend wall-clock = max(total_ms) — the slowest frame is what kept us waiting.
+            // Using individual total_ms would inflate Network for early-finishing frames.
+            let batchBackendMs=0;
+            for(const res of r.results){
+                if(res.timing&&res.timing.total_ms>batchBackendMs)batchBackendMs=res.timing.total_ms;
+            }
             for(const res of r.results){
                 if(res.type==='error'){
                     if(res.request_id){
@@ -880,7 +902,8 @@ function onMsg(data){
                 const lat=performance.now()-entry.t0;
                 const det=res.detections||[],tm=res.timing||{};
                 const currentFrameId=res.frame_id||frameId;
-                displayQueue.push({det,tm,lat,currentFrameId,
+                // Stash batch-wall-clock so applyDisplayFrame can compute accurate Network
+                displayQueue.push({det,tm,lat,batchBackendMs,currentFrameId,
                     captureTime:entry.captureTime||0,bitmap:entry.bitmap||null});
             }
             if(!displayDraining){log('batch_result: queue='+displayQueue.length+' frames, draining at '+targetFps+'fps');drainDisplayQueue();}
@@ -912,7 +935,11 @@ function applyDisplayFrame(f){
     fpsCnt++;
     const elapsed=(performance.now()-fpsT0)/1000;
     const backendMs=f.tm.total_ms||0;
-    const networkMs=Math.max(0,f.lat-backendMs);
+    // Use batch-wide max(total_ms) for accurate Network: subtracts the time the
+    // backend actually held this batch (including waiting for sibling frames).
+    // Falls back to per-frame total_ms for legacy single-frame results.
+    const referenceBackend=f.batchBackendMs!=null?f.batchBackendMs:backendMs;
+    const networkMs=Math.max(0,f.lat-referenceBackend);
     $('sLat').textContent=f.lat.toFixed(0);
     $('sNet').textContent=networkMs.toFixed(0);
     $('sBack').textContent=backendMs.toFixed(0);
