@@ -29,6 +29,7 @@ let fpsT0 = 0
 let fpsCnt = 0
 let sourceVideoUrl = null
 let targetTransform = { scale: 1, panX: 0, panY: 0 }
+let idleRenderRaf = 0
 let laneDetectionEnabled = false
 let trajLength = 100
 let homographyMatrix = null
@@ -67,13 +68,66 @@ function setConn(on) {
 }
 
 function applyTransform() {
-  const target = cvs.style.display !== 'none' ? cvs : vid
-  target.style.transform = `translate(${targetTransform.panX}px,${targetTransform.panY}px) scale(${targetTransform.scale})`
+  cvs.style.transform = `translate(${targetTransform.panX}px,${targetTransform.panY}px) scale(${targetTransform.scale})`
 }
 
 function resetTransform() {
   targetTransform = { scale: 1, panX: 0, panY: 0 }
   applyTransform()
+}
+
+function startIdleRender() {
+  cancelIdleRender()
+  const tick = () => {
+    if (!videoLoaded) {
+      idleRenderRaf = 0
+      return
+    }
+    if (!streaming) {
+      if (vid.readyState >= 2) {
+        cx.drawImage(vid, 0, 0, cvs.width, cvs.height)
+      }
+      drawLanes()
+      drawLaneInProgress()
+    }
+    idleRenderRaf = requestAnimationFrame(tick)
+  }
+  idleRenderRaf = requestAnimationFrame(tick)
+}
+
+function cancelIdleRender() {
+  if (idleRenderRaf) cancelAnimationFrame(idleRenderRaf)
+  idleRenderRaf = 0
+}
+
+function drawLaneInProgress() {
+  if (!drawingLane || !lanes[drawingLane]) return
+  const lane = lanes[drawingLane]
+  const pts = lane.points
+  if (!pts.length) return
+  cx.save()
+  cx.strokeStyle = lane.color
+  cx.fillStyle = lane.color
+  cx.lineWidth = 2
+  cx.setLineDash([8, 6])
+  cx.beginPath()
+  cx.moveTo(pts[0][0], pts[0][1])
+  for (let i = 1; i < pts.length; i++) cx.lineTo(pts[i][0], pts[i][1])
+  if (pts.length >= 3) {
+    cx.lineTo(pts[0][0], pts[0][1])
+  }
+  cx.stroke()
+  cx.setLineDash([])
+  for (let i = 0; i < pts.length; i++) {
+    cx.beginPath()
+    cx.arc(pts[i][0], pts[i][1], 6, 0, Math.PI * 2)
+    cx.fill()
+    cx.fillStyle = '#000'
+    cx.font = 'bold 12px sans-serif'
+    cx.fillText(String(i + 1), pts[i][0] + 8, pts[i][1] - 8)
+    cx.fillStyle = lane.color
+  }
+  cx.restore()
 }
 
 function toggleConn() {
@@ -158,8 +212,8 @@ function loadVideo(file) {
   revokeSourceVideo()
   sourceVideoUrl = URL.createObjectURL(file)
   vid.src = sourceVideoUrl
-  vid.style.display = 'block'
-  cvs.style.display = 'none'
+  vid.style.display = 'none'
+  cvs.style.display = 'block'
   $('ph').style.display = 'none'
   $('tl').classList.remove('hidden')
   vid.onloadedmetadata = () => {
@@ -172,6 +226,7 @@ function loadVideo(file) {
     videoLoaded = true
     setConn(ws && ws.readyState === WebSocket.OPEN)
     resetTransform()
+    startIdleRender()
     log(`Loaded: ${file.name} (${vid.videoWidth}x${vid.videoHeight}, ${fmtTime(vid.duration)})`, 'success')
   }
 }
@@ -230,8 +285,6 @@ function startInfer() {
   $('btnPause').classList.remove('hidden')
   $('btnStop').classList.remove('hidden')
   $('live').style.visibility = 'visible'
-  vid.style.display = 'none'
-  cvs.style.display = 'block'
   log(`Inference started (${targetFps} fps, batch=${MAX_INFLIGHT})`, 'success')
   ws.send(JSON.stringify({ type: 'reset', request_id: 'reset_start' }))
 }
@@ -253,8 +306,6 @@ function stopInfer(logStop = true) {
   $('btnStop').classList.add('hidden')
   $('btnPause').textContent = 'Pause'
   $('live').style.visibility = 'hidden'
-  vid.style.display = 'block'
-  cvs.style.display = 'none'
   updatePlayIcon()
   if (logStop) log(`Stopped at frame ${frameId}`)
 }
@@ -531,6 +582,7 @@ function draw(detections, currentFrameId) {
   }
 
   drawLanes()
+  drawLaneInProgress()
 }
 
 function onMsg(data) {
@@ -689,7 +741,11 @@ function loadHomographyFile(file) {
 
 function applyHomography() {
   const text = $('hInput').value.trim()
-  const nums = text.split(/[\s,;]+/).map(Number).filter((n) => Number.isFinite(n))
+  const nums = text
+    .replace(/[\[\](){}]/g, ' ')
+    .split(/[\s,;]+/)
+    .map(Number)
+    .filter((n) => Number.isFinite(n))
   if (nums.length !== 9) {
     log(`Homography needs exactly 9 numbers, got ${nums.length}`, 'error')
     return
@@ -785,16 +841,17 @@ function setupPanZoom() {
   })
 
   el.addEventListener('mousedown', (event) => {
-    if (drawingLane) {
+    if (drawingLane && videoLoaded) {
       event.preventDefault()
       event.stopPropagation()
-      const target = cvs.style.display !== 'none' ? cvs : vid
-      const rect = target.getBoundingClientRect()
-      const tx = (event.clientX - rect.left - targetTransform.panX) / targetTransform.scale
-      const ty = (event.clientY - rect.top - targetTransform.panY) / targetTransform.scale
-      const scaleX = (cvs.width || vid.videoWidth || rect.width) / rect.width
-      const scaleY = (cvs.height || vid.videoHeight || rect.height) / rect.height
-      const point = [tx * scaleX, ty * scaleY]
+      const rect = cvs.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return
+      if (event.clientX < rect.left || event.clientX > rect.right ||
+          event.clientY < rect.top || event.clientY > rect.bottom) return
+      const point = [
+        (event.clientX - rect.left) * cvs.width / rect.width,
+        (event.clientY - rect.top) * cvs.height / rect.height,
+      ]
       lanes[drawingLane].points.push(point)
       patchLaneUI()
       return
