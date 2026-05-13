@@ -380,7 +380,43 @@ let vehicleTracks={}; // {trackId: {positions:[],groundPositions:[],lonlatPositi
 let lanes={};          // {laneId: {name,points:[],polygon:null,visible,vehiclesInside:Set,counted:Set,passCount,flowCount,queueCount,flowRate,passTimestamps:[]}}
 let laneCounter=0;
 let drawingLane=null;  // laneId currently being drawn
+let laneCursor=null;   // [x,y] in canvas buffer coords for live preview, or null
+let laneSnapToFirst=false; // true when cursor is near the first vertex
 let selectedVehicle=null;
+
+/** Map a mouse click to canvas buffer coordinates, accounting for object-fit:contain. */
+function mapClickToCanvas(clientX,clientY){
+    const rect=cvs.getBoundingClientRect();
+    if(rect.width===0||rect.height===0)return null;
+    const bufW=cvs.width,bufH=cvs.height;
+    if(!bufW||!bufH)return null;
+    const bufAspect=bufW/bufH;
+    const boxAspect=rect.width/rect.height;
+    let dispW,dispH,offX,offY;
+    if(bufAspect>boxAspect){
+        // pillarboxed top/bottom
+        dispW=rect.width;
+        dispH=rect.width/bufAspect;
+        offX=0;
+        offY=(rect.height-dispH)/2;
+    }else{
+        // letterboxed left/right
+        dispH=rect.height;
+        dispW=rect.height*bufAspect;
+        offX=(rect.width-dispW)/2;
+        offY=0;
+    }
+    const lx=clientX-rect.left-offX;
+    const ly=clientY-rect.top-offY;
+    const inside=lx>=0&&lx<=dispW&&ly>=0&&ly<=dispH;
+    return{
+        x:Math.max(0,Math.min(bufW,lx*bufW/dispW)),
+        y:Math.max(0,Math.min(bufH,ly*bufH/dispH)),
+        inside:inside,
+    };
+}
+
+function laneSnapRadius(){return Math.max(18,cvs.width*0.012);}
 
 function resetRunTrackingState(){
     vehicleTracks={};
@@ -1134,15 +1170,58 @@ function drawLanes(){
         }
     }
     if(drawingLane&&lanes[drawingLane]){
-        const pts=lanes[drawingLane].points;
-        cx.fillStyle='#0f0';
-        for(const p of pts){cx.beginPath();cx.arc(p[0],p[1],5,0,Math.PI*2);cx.fill();}
+        const lane=lanes[drawingLane];
+        const pts=lane.points;
+        const color=lane.color||'#0f0';
+        // Committed segments (solid)
         if(pts.length>1){
-            cx.strokeStyle='#0f0';cx.lineWidth=1;cx.setLineDash([6,4]);
-            cx.beginPath();cx.moveTo(pts[0][0],pts[0][1]);
+            cx.save();
+            cx.strokeStyle=color;
+            cx.lineWidth=2;
+            cx.beginPath();
+            cx.moveTo(pts[0][0],pts[0][1]);
             for(let i=1;i<pts.length;i++)cx.lineTo(pts[i][0],pts[i][1]);
-            cx.stroke();cx.setLineDash([]);
+            cx.stroke();
+            cx.restore();
         }
+        // Live preview from last point to cursor (dashed)
+        if(laneCursor&&pts.length>0){
+            cx.save();
+            cx.strokeStyle=laneSnapToFirst?color:'#bbb';
+            cx.lineWidth=2;
+            cx.setLineDash([6,5]);
+            cx.beginPath();
+            const last=pts[pts.length-1];
+            cx.moveTo(last[0],last[1]);
+            cx.lineTo(laneCursor[0],laneCursor[1]);
+            if(laneSnapToFirst&&pts.length>=3){
+                cx.lineTo(pts[0][0],pts[0][1]);
+            }
+            cx.stroke();
+            cx.setLineDash([]);
+            cx.restore();
+        }
+        // Numbered vertices, first one highlighted on snap
+        const vsize=Math.max(7,Math.round(cvs.width/180));
+        const fs=Math.max(12,Math.round(cvs.width/95));
+        cx.save();
+        cx.font='bold '+fs+'px Inter,sans-serif';
+        cx.textAlign='center';
+        cx.textBaseline='middle';
+        for(let i=0;i<pts.length;i++){
+            const isFirst=i===0;
+            const r=(isFirst&&laneSnapToFirst&&pts.length>=3)?vsize*1.8:vsize;
+            cx.beginPath();
+            cx.arc(pts[i][0],pts[i][1],r,0,Math.PI*2);
+            cx.fillStyle=isFirst?'#fff':color;
+            cx.fill();
+            cx.strokeStyle=color;
+            cx.lineWidth=2;
+            cx.stroke();
+            cx.fillStyle='#000';
+            cx.fillText(String(i+1),pts[i][0],pts[i][1]);
+        }
+        cx.restore();
     }
 }
 
@@ -1237,8 +1316,11 @@ function startDrawLane(lid){
     lanes[lid].points=[];
     lanes[lid].polygon=null;
     lanes[lid].visible=false;
+    laneCursor=null;
+    laneSnapToFirst=false;
     $('player').classList.add('lane-drawing');
-    log('Drawing '+lanes[lid].name+': click on video to add points. Click "Done" when finished.');
+    log('Drawing '+lanes[lid].name+': left-click add · right-click undo · click first vertex or dblclick to finish · ESC to cancel');
+    drawLaneOverlay();
     renderLaneList();
 }
 
@@ -1251,8 +1333,11 @@ function finishDrawLane(lid){
     lanes[lid].polygon=[...lanes[lid].points];
     lanes[lid].visible=true;
     drawingLane=null;
+    laneCursor=null;
+    laneSnapToFirst=false;
     $('player').classList.remove('lane-drawing');
     log(lanes[lid].name+' defined with '+lanes[lid].points.length+' points','success');
+    drawLaneOverlay();
     renderLaneList();
 }
 
@@ -1261,13 +1346,15 @@ function resetLane(lid){
     lanes[lid].points=[];lanes[lid].polygon=null;lanes[lid].visible=false;
     lanes[lid].vehiclesInside=new Set();lanes[lid].counted=new Set();
     lanes[lid].passCount=0;lanes[lid].passTimestamps=[];lanes[lid].flowCount=0;lanes[lid].queueCount=0;lanes[lid].flowRate=0;
-    if(drawingLane===lid){drawingLane=null;$('player').classList.remove('lane-drawing');}
+    if(drawingLane===lid){drawingLane=null;laneCursor=null;laneSnapToFirst=false;$('player').classList.remove('lane-drawing');}
+    drawLaneOverlay();
     renderLaneList();
 }
 
 function deleteLane(lid){
-    if(drawingLane===lid){drawingLane=null;$('player').classList.remove('lane-drawing');}
+    if(drawingLane===lid){drawingLane=null;laneCursor=null;laneSnapToFirst=false;$('player').classList.remove('lane-drawing');}
     delete lanes[lid];
+    drawLaneOverlay();
     renderLaneList();
 }
 
@@ -1491,30 +1578,95 @@ function clearAllData(){
     const el=$('player');let s=1,px=0,py=0,pan=false,sx,sy;
     function tr(){const t=cvs.style.display!=='none'?cvs:vid;t.style.transform='translate('+px+'px,'+py+'px) scale('+s+')'}
     el.addEventListener('wheel',e=>{e.preventDefault();const r=el.getBoundingClientRect(),xs=(e.clientX-r.left-px)/s,ys=(e.clientY-r.top-py)/s;s*=e.deltaY<0?1.12:.89;s=Math.min(Math.max(.5,s),12);px=e.clientX-r.left-xs*s;py=e.clientY-r.top-ys*s;tr()});
+    el.addEventListener('contextmenu',e=>{if(drawingLane)e.preventDefault();});
     el.addEventListener('mousedown',e=>{
         if(e.target.closest('.player-placeholder'))return;
         if(drawingLane){
             e.preventDefault();e.stopPropagation();
+            if(e.button===2){
+                // right-click: undo last point
+                const pts=lanes[drawingLane].points;
+                if(pts.length){
+                    pts.pop();
+                    renderLaneList();
+                    drawLaneOverlay();
+                    log(lanes[drawingLane].name+': undo, '+pts.length+' pts left');
+                }
+                return;
+            }
+            if(e.button!==0)return;
             if(!videoLoaded){log('Load a video first to draw lane points','warn');return;}
-            // Make sure canvas is the visible target so getBoundingClientRect reflects what user sees
-            drawLaneOverlay();
-            const tRect=cvs.getBoundingClientRect();
-            if(tRect.width===0||tRect.height===0)return;
-            if(e.clientX<tRect.left||e.clientX>tRect.right||e.clientY<tRect.top||e.clientY>tRect.bottom)return;
-            // rect already includes CSS transform; map directly to canvas buffer pixel
-            const cx_=(e.clientX-tRect.left)*cvs.width/tRect.width;
-            const cy_=(e.clientY-tRect.top)*cvs.height/tRect.height;
-            lanes[drawingLane].points.push([cx_,cy_]);
+            drawLaneOverlay(); // ensure cvs is the visible target
+            const p=mapClickToCanvas(e.clientX,e.clientY);
+            if(!p||!p.inside){log('Click inside the video area','warn');return;}
+            const pts=lanes[drawingLane].points;
+            // Snap-close: clicking near first vertex finishes the polygon
+            if(pts.length>=3){
+                const dx=p.x-pts[0][0],dy=p.y-pts[0][1];
+                if(Math.sqrt(dx*dx+dy*dy)<=laneSnapRadius()){
+                    finishDrawLane(drawingLane);
+                    return;
+                }
+            }
+            pts.push([p.x,p.y]);
             renderLaneList();
-            log(lanes[drawingLane].name+': added point ('+cx_.toFixed(0)+', '+cy_.toFixed(0)+') — '+lanes[drawingLane].points.length+' pts');
             drawLaneOverlay();
+            log(lanes[drawingLane].name+': pt #'+pts.length+' ('+p.x.toFixed(0)+', '+p.y.toFixed(0)+')');
             return;
         }
         if(e.button===0){pan=true;sx=e.clientX-px;sy=e.clientY-py;el.style.cursor='grabbing'}
     });
+    el.addEventListener('mousemove',e=>{
+        if(!drawingLane||!videoLoaded)return;
+        const p=mapClickToCanvas(e.clientX,e.clientY);
+        if(!p){laneCursor=null;laneSnapToFirst=false;return;}
+        const pts=lanes[drawingLane].points;
+        let cursor=p.inside?[p.x,p.y]:null;
+        let snap=false;
+        if(cursor&&pts.length>=3){
+            const dx=cursor[0]-pts[0][0],dy=cursor[1]-pts[0][1];
+            if(Math.sqrt(dx*dx+dy*dy)<=laneSnapRadius()){
+                snap=true;
+                cursor=[pts[0][0],pts[0][1]];
+            }
+        }
+        if(cursor!==laneCursor||snap!==laneSnapToFirst){
+            laneCursor=cursor;laneSnapToFirst=snap;
+            drawLaneOverlay();
+        }
+    });
+    el.addEventListener('mouseleave',()=>{
+        if(drawingLane){laneCursor=null;laneSnapToFirst=false;drawLaneOverlay();}
+    });
     window.addEventListener('mouseup',()=>{pan=false;el.style.cursor=drawingLane?'crosshair':'grab'});
     window.addEventListener('mousemove',e=>{if(!pan)return;e.preventDefault();px=e.clientX-sx;py=e.clientY-sy;tr()});
-    el.addEventListener('dblclick',()=>{s=1;px=0;py=0;tr()});
+    el.addEventListener('dblclick',e=>{
+        if(drawingLane){
+            e.preventDefault();e.stopPropagation();
+            if(lanes[drawingLane].points.length>=3){
+                finishDrawLane(drawingLane);
+            }else{
+                log('Need at least 3 points before finishing','warn');
+            }
+            return;
+        }
+        s=1;px=0;py=0;tr();
+    });
+    window.addEventListener('keydown',e=>{
+        if(e.key==='Escape'&&drawingLane){
+            const lid=drawingLane;
+            lanes[lid].points=[];
+            lanes[lid].polygon=null;
+            lanes[lid].visible=false;
+            drawingLane=null;
+            laneCursor=null;
+            laneSnapToFirst=false;
+            $('player').classList.remove('lane-drawing');
+            renderLaneList();
+            drawLaneOverlay();
+            log('Drawing cancelled');
+        }
+    });
 }();
 
 /* Global drop */
