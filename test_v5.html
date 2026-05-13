@@ -1386,7 +1386,7 @@ function updateVehicleList(){
    ══════════════════════════════════════════ */
 function applyHomography(){
     const text=$('hInput').value.trim();
-    const nums=text.split(/[\s,;]+/).map(Number).filter(n=>isFinite(n));
+    const nums=text.replace(/[\[\](){}]/g,' ').split(/[\s,;]+/).map(Number).filter(n=>isFinite(n));
     if(nums.length!==9){log('Homography needs exactly 9 numbers, got '+nums.length,'error');return;}
     homographyMatrix=nums;
     originLon=+$('oriLon').value;
@@ -1495,23 +1495,19 @@ function clearAllData(){
         if(e.target.closest('.player-placeholder'))return;
         if(drawingLane){
             e.preventDefault();e.stopPropagation();
-            // Determine which element is visible (canvas or video)
-            const target=cvs.style.display!=='none'?cvs:vid;
-            if(target.style.display==='none'){log('Load a video first to draw lane points','warn');return;}
-            const tRect=target.getBoundingClientRect();
+            if(!videoLoaded){log('Load a video first to draw lane points','warn');return;}
+            // Make sure canvas is the visible target so getBoundingClientRect reflects what user sees
+            drawLaneOverlay();
+            const tRect=cvs.getBoundingClientRect();
             if(tRect.width===0||tRect.height===0)return;
-            // Map click to original video/canvas pixel coordinates
-            const scaleX=(cvs.width||vid.videoWidth||tRect.width)/tRect.width;
-            const scaleY=(cvs.height||vid.videoHeight||tRect.height)/tRect.height;
-            const cx_=(e.clientX-tRect.left)*scaleX;
-            const cy_=(e.clientY-tRect.top)*scaleY;
-            if(cx_>=0&&cy_>=0){
-                lanes[drawingLane].points.push([cx_,cy_]);
-                renderLaneList();
-                log(lanes[drawingLane].name+': added point ('+cx_.toFixed(0)+', '+cy_.toFixed(0)+') — '+lanes[drawingLane].points.length+' pts');
-                // Immediately draw on screen
-                drawLaneOverlay();
-            }
+            if(e.clientX<tRect.left||e.clientX>tRect.right||e.clientY<tRect.top||e.clientY>tRect.bottom)return;
+            // rect already includes CSS transform; map directly to canvas buffer pixel
+            const cx_=(e.clientX-tRect.left)*cvs.width/tRect.width;
+            const cy_=(e.clientY-tRect.top)*cvs.height/tRect.height;
+            lanes[drawingLane].points.push([cx_,cy_]);
+            renderLaneList();
+            log(lanes[drawingLane].name+': added point ('+cx_.toFixed(0)+', '+cy_.toFixed(0)+') — '+lanes[drawingLane].points.length+' pts');
+            drawLaneOverlay();
             return;
         }
         if(e.button===0){pan=true;sx=e.clientX-px;sy=e.clientY-py;el.style.cursor='grabbing'}
