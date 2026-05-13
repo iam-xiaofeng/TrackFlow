@@ -78,6 +78,7 @@
         <button class="tab-btn" data-tab="settings">Settings</button>
         <button class="tab-btn" data-tab="lanes">Lanes</button>
         <button class="tab-btn" data-tab="data">Data</button>
+        <button class="tab-btn" data-tab="agent">Agent</button>
       </div>
       <div class="tab-content">
         <div class="tab-pane active" id="tab-vehicles">
@@ -142,6 +143,23 @@
           <button class="btn" id="exportLaneBtn" style="margin-bottom:.8rem;width:100%">Export Lane Stats (CSV)</button>
           <div class="section-title">Actions</div>
           <button class="btn btn-r" id="clearAllBtn" style="width:100%">Clear All Data</button>
+        </div>
+
+        <div class="tab-pane chat-pane" id="tab-agent">
+          <div class="chat-header">
+            <div class="chat-title">Traffic Analysis Agent</div>
+            <div class="chat-status" id="chatStatus">Offline</div>
+          </div>
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-empty">
+              Agent backend is not yet connected.<br>
+              Ask questions about traffic flow, conflicts or trends once the agent service is online.
+            </div>
+          </div>
+          <div class="chat-input-row">
+            <textarea id="chatInput" class="chat-input" rows="2" placeholder="Ask the agent... (e.g. 北进口早高峰流量是多少?)" disabled></textarea>
+            <button class="btn btn-g" id="chatSendBtn" disabled>Send</button>
+          </div>
         </div>
       </div>
     </div>
