@@ -1386,7 +1386,7 @@ function updateVehicleList(){
    ══════════════════════════════════════════ */
 function applyHomography(){
     const text=$('hInput').value.trim();
-    const nums=text.replace(/[\[\](){}]/g,' ').split(/[\s,;]+/).map(Number).filter(n=>isFinite(n));
+    const nums=text.replace(/[\[\](){}]/g,' ').split(/[\s,;]+/).filter(s=>s.length>0).map(Number).filter(n=>isFinite(n));
     if(nums.length!==9){log('Homography needs exactly 9 numbers, got '+nums.length,'error');return;}
     homographyMatrix=nums;
     originLon=+$('oriLon').value;

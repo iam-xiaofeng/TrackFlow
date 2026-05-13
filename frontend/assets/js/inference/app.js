@@ -744,6 +744,7 @@ function applyHomography() {
   const nums = text
     .replace(/[\[\](){}]/g, ' ')
     .split(/[\s,;]+/)
+    .filter((s) => s.length > 0)
     .map(Number)
     .filter((n) => Number.isFinite(n))
   if (nums.length !== 9) {
