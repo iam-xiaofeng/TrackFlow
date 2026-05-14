@@ -337,3 +337,29 @@
 **解决**:
 - 将 `src/processors/batch_inference_engine.cpp` 中的 batch 利用率日志频率从“每 50 个 batch”调整为“每 10 个 batch”。
 - 日志格式保持不变，仍输出 `avg frames/batch` 和 `this batch`，便于直接判断实际 batch 利用率。
+
+## 29. 2026-05-14 GeoTransformer 经纬度输出错误：PROJ 默认轴顺序陷阱
+**问题**: C++ 后端对同一视频、同一 homography、同一畸变参数算出的每个目标经纬度与 Python 参考实现 `traj_keyong.py` 不一致；后者经人工验证为正确。
+
+**原因**: `src/processors/geo_transformer.cpp` 用了 `proj_create_crs_to_crs` 创建 UTM↔WGS84 转换但 **没有调 `proj_normalize_for_visualization`**。PROJ ≥ 6 默认遵循 EPSG 注册的轴顺序，EPSG:4326 的官方轴顺序是 (Latitude, Longitude) 而非 (Longitude, Latitude)。这导致两处错误：
+
+1. `init_proj()` 里 `proj_coord(origin_lon_, origin_lat_, 0, 0)` 给 PJ_INV (4326→UTM)，PROJ 把 v[0] 当作 lat、v[1] 当作 lon。对于上海原点 (121.5, 31.24)，PROJ 会把 121.5 当作纬度（>90° 非法），PROJ 输出 `inf`；对于较小经度值的原点则会算出"看似合理但完全错位"的 UTM。
+2. `utm_to_lonlat()` 里 `proj_trans(PJ_FWD)` 输出后用 `.lp.lam`/`.lp.phi` 读取，但默认轴顺序下 `v[0]=lat`, `v[1]=lon`，与 `lam`/`phi` 字段名含义相反 → 返回 (lat, lon) 而函数声称返回 (lon, lat)。
+
+参考 `traj_keyong.py:3077-3080`：
+```python
+transformer = Transformer.from_crs(utm_crs, 'EPSG:4326', always_xy=True)  # ← always_xy
+origin_transformer = Transformer.from_crs('EPSG:4326', utm_crs, always_xy=True)
+```
+pyproj 的 `always_xy=True` 与 PROJ C API 的 `proj_normalize_for_visualization` 是等价语义：强制所有地理 CRS 用 (lon, lat)、所有投影 CRS 用 (east, north)。
+
+**解决**:
+- 在 `init_proj()` 里 `proj_create_crs_to_crs` 后立即调 `proj_normalize_for_visualization(ctx, base)`，把返回的 PJ 替换原 base，destroy 掉 base。
+- 修复后 `proj_coord(origin_lon, origin_lat, ...)` / `.lp.lam`(=lon) / `.lp.phi`(=lat) 全部与命名含义一致，与 pyproj 行为一致。
+
+**验证**: `scripts/geo_validate.cpp` 用同一组 (origin, H, pixel) 同时跑修复前、修复后、pyproj 三条路径：
+- 修复前: `origin_utm=(inf, inf)`, return `(inf, inf)` + stderr 报 "Invalid latitude"
+- 修复后: `origin_utm=(357791.173, 3457150.618)`, return `(121.505841, 31.240063)`
+- pyproj: `origin_utm=(357791.173, 3457150.618)`, return `(121.505841, 31.240063)` ✓ 完全一致
+
+**关键教训**: 凡是用 PROJ C API 与 EPSG:4326 做地理 ↔ 投影互转，**永远**先 `proj_normalize_for_visualization` 一次，否则默认的 (lat, lon) 轴顺序会与几乎所有"业务直觉里的 (lon, lat)" 用法冲突。`PJ_LP.lam`/`.phi` 字段名只是命名约定，不代表实际存放的语义——语义由轴顺序决定。

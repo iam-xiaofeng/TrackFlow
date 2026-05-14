@@ -81,15 +81,29 @@ void GeoTransformer::init_proj() {
   int epsg = is_north ? (32600 + zone) : (32700 + zone);
 
   std::string utm_def = "EPSG:" + std::to_string(epsg);
-  proj_ = proj_create_crs_to_crs(static_cast<PJ_CONTEXT *>(proj_ctx_),
-                                 utm_def.c_str(), "EPSG:4326", nullptr);
-
-  if (!proj_) {
+  PJ *base = proj_create_crs_to_crs(static_cast<PJ_CONTEXT *>(proj_ctx_),
+                                    utm_def.c_str(), "EPSG:4326", nullptr);
+  if (!base) {
     fprintf(stderr,
             "[ERROR] GeoTransformer: Failed to create PROJ transformation\n");
     return;
   }
 
+  // 关键: 默认 PROJ ≥ 6 遵循 EPSG 轴顺序, EPSG:4326 是 (lat, lon),
+  // 这会让 proj_coord(lon, lat) 被解释成 (lat, lon) 而完全错位。
+  // normalize_for_visualization 强制所有地理 CRS 使用 (lon, lat)、
+  // 投影 CRS 使用 (east, north), 与 pyproj 的 always_xy=True 行为一致。
+  proj_ = proj_normalize_for_visualization(
+      static_cast<PJ_CONTEXT *>(proj_ctx_), base);
+  proj_destroy(base);
+
+  if (!proj_) {
+    fprintf(stderr,
+            "[ERROR] GeoTransformer: proj_normalize_for_visualization failed\n");
+    return;
+  }
+
+  // 原点的 UTM 坐标 (PJ_INV: 4326→UTM, 输入是 (lon, lat) 因为已 normalize)
   PJ_COORD origin_wgs84 = proj_coord(origin_lon_, origin_lat_, 0, 0);
   PJ_COORD origin_utm =
       proj_trans(static_cast<PJ *>(proj_), PJ_INV, origin_wgs84);
@@ -102,6 +116,8 @@ std::pair<double, double> GeoTransformer::utm_to_lonlat(double easting,
   double world_x = easting + origin_utm_x_;
   double world_y = northing + origin_utm_y_;
 
+  // PJ_FWD: UTM→4326. proj_ 已 normalize, 输出按 (lon, lat) 顺序存入 v[0]/v[1].
+  // PJ_LP.lam=v[0]=lon, PJ_LP.phi=v[1]=lat, 名称与含义一致。
   PJ_COORD utm = proj_coord(world_x, world_y, 0, 0);
   PJ_COORD lonlat = proj_trans(static_cast<PJ *>(proj_), PJ_FWD, utm);
 
