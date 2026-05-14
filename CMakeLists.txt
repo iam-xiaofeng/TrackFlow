@@ -98,6 +98,7 @@ include_directories(
 set(CORE_SOURCES
     src/core/processor_factory.cpp
     src/core/event_writer.cpp
+    src/core/roi_registry.cpp
 )
 
 set(PROCESSOR_SOURCES

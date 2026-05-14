@@ -117,6 +117,14 @@ void EventWriter::enqueue_track(TrackRow row) {
   enqueue_event(std::move(row));
 }
 
+void EventWriter::enqueue_flow_stat(FlowStatRow row) {
+  enqueue_event(std::move(row));
+}
+
+void EventWriter::enqueue_queue_stat(QueueStatRow row) {
+  enqueue_event(std::move(row));
+}
+
 EventWriter::Stats EventWriter::stats() const {
   Stats s;
   s.enqueued = enq_count_.load();
@@ -236,6 +244,46 @@ bool EventWriter::write_track(const TrackRow &r) {
   return true;
 }
 
+bool EventWriter::write_flow_stat(const FlowStatRow &r) {
+  auto *m = static_cast<MYSQL *>(conn_);
+  // 同 (intersection, bucket, approach, movement) UPSERT 累加
+  std::string sql =
+      "INSERT INTO flow_stats "
+      "(intersection_id, time_bucket, approach, movement, vehicle_count, pedestrian_count) "
+      "VALUES (" +
+      esc_str(r.intersection_id, m) + "," + esc_str(r.time_bucket, m) + "," +
+      esc_str(r.approach, m) + "," + esc_str(r.movement, m) + "," +
+      std::to_string(r.vehicle_count) + "," +
+      std::to_string(r.pedestrian_count) +
+      ") ON DUPLICATE KEY UPDATE "
+      "vehicle_count = vehicle_count + VALUES(vehicle_count), "
+      "pedestrian_count = pedestrian_count + VALUES(pedestrian_count)";
+  if (mysql_query(m, sql.c_str()) != 0) {
+    fprintf(stderr, "[ERROR] write_flow_stat: %s\n", mysql_error(m));
+    return false;
+  }
+  return true;
+}
+
+bool EventWriter::write_queue_stat(const QueueStatRow &r) {
+  auto *m = static_cast<MYSQL *>(conn_);
+  // queue_stats 没有 UNIQUE KEY, 每次 INSERT 一行覆盖同桶的多次累计——
+  // 调用方应确保一个桶只 enqueue 一次 (在 bucket 切换时统一写)
+  std::string sql =
+      "INSERT INTO queue_stats "
+      "(intersection_id, time_bucket, approach, lane_id, avg_queue_length, "
+      "max_queue_length, avg_wait_time, queue_vehicle_count) VALUES (" +
+      esc_str(r.intersection_id, m) + "," + esc_str(r.time_bucket, m) + "," +
+      esc_str(r.approach, m) + "," + opt_str(r.lane_id, m) + "," +
+      opt_num(r.avg_queue_length) + "," + opt_num(r.max_queue_length) + "," +
+      opt_num(r.avg_wait_time) + "," + opt_num(r.queue_vehicle_count) + ")";
+  if (mysql_query(m, sql.c_str()) != 0) {
+    fprintf(stderr, "[ERROR] write_queue_stat: %s\n", mysql_error(m));
+    return false;
+  }
+  return true;
+}
+
 void EventWriter::worker_loop() {
   using namespace std::chrono_literals;
   auto last_reconnect_attempt = std::chrono::steady_clock::now() - 1h;
@@ -281,6 +329,10 @@ void EventWriter::worker_loop() {
             ok = write_conflict_event(row);
           } else if constexpr (std::is_same_v<T, TrackRow>) {
             ok = write_track(row);
+          } else if constexpr (std::is_same_v<T, FlowStatRow>) {
+            ok = write_flow_stat(row);
+          } else if constexpr (std::is_same_v<T, QueueStatRow>) {
+            ok = write_queue_stat(row);
           }
         },
         ev);
@@ -317,6 +369,10 @@ void EventWriter::worker_loop() {
               write_conflict_event(row);
             else if constexpr (std::is_same_v<T, TrackRow>)
               write_track(row);
+            else if constexpr (std::is_same_v<T, FlowStatRow>)
+              write_flow_stat(row);
+            else if constexpr (std::is_same_v<T, QueueStatRow>)
+              write_queue_stat(row);
           },
           ev);
     }

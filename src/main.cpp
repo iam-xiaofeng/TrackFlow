@@ -1,5 +1,6 @@
 #include "core/event_writer.hpp"
 #include "core/processor_factory.hpp"
+#include "core/roi_registry.hpp"
 #include "network/ws_server.hpp"
 #include "utils/config.hpp"
 #include "utils/thread_pool.hpp"
@@ -162,6 +163,7 @@ int main(int argc, char *argv[]) {
       // 若 config 没有 mysql 段, EventWriter 仍会启动但写入会失败重连;
       // 不影响主管线。
       yolo_edge::EventWriter::Config ew_cfg;
+      yolo_edge::RoiRegistry::DbConfig roi_db_cfg;
       if (auto sec = config.get_section("mysql"); !sec.empty()) {
         ew_cfg.host = sec.value("host", ew_cfg.host);
         ew_cfg.port = sec.value("port", ew_cfg.port);
@@ -169,9 +171,20 @@ int main(int argc, char *argv[]) {
         ew_cfg.password = sec.value("password", ew_cfg.password);
         ew_cfg.db = sec.value("db", ew_cfg.db);
         ew_cfg.max_queue_size = sec.value("max_queue_size", ew_cfg.max_queue_size);
+        roi_db_cfg.host = ew_cfg.host;
+        roi_db_cfg.port = ew_cfg.port;
+        roi_db_cfg.user = ew_cfg.user;
+        roi_db_cfg.password = ew_cfg.password;
+        roi_db_cfg.db = ew_cfg.db;
       }
       yolo_edge::EventWriter::instance().configure(ew_cfg);
       yolo_edge::EventWriter::instance().start();
+
+      // 加载 ROI (M2). 没配 mysql 就跳过, TrafficAnalyzer 仍能挂上 pipeline,
+      // 只是所有点归属都返回 "" 不输出事件
+      if (!roi_db_cfg.user.empty() && !roi_db_cfg.db.empty()) {
+        yolo_edge::RoiRegistry::instance().reload_from_mysql(roi_db_cfg);
+      }
     } catch (const std::exception &e) {
       fprintf(stderr, "[WARN] Failed to load config: %s\n", e.what());
     }

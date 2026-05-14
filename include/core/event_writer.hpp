@@ -70,6 +70,28 @@ struct TrackRow {
   std::optional<json> extra;
 };
 
+// flow_stats: 5min 桶聚合, 用 INSERT ... ON DUPLICATE KEY UPDATE 累加
+struct FlowStatRow {
+  std::string intersection_id;
+  std::string time_bucket;  // "YYYY-MM-DD HH:MM:00", 已 floor 到 5min
+  std::string approach;
+  std::string movement;
+  int vehicle_count = 0;
+  int pedestrian_count = 0;
+};
+
+// queue_stats: 5min 桶聚合
+struct QueueStatRow {
+  std::string intersection_id;
+  std::string time_bucket;
+  std::string approach;
+  std::optional<std::string> lane_id;
+  std::optional<float> avg_queue_length;
+  std::optional<float> max_queue_length;
+  std::optional<float> avg_wait_time;
+  std::optional<int> queue_vehicle_count;
+};
+
 /**
  * 异步事件写入器 (单例)
  *
@@ -124,6 +146,8 @@ public:
   void enqueue_vehicle_event(VehicleEventRow row);
   void enqueue_conflict_event(ConflictEventRow row);
   void enqueue_track(TrackRow row);
+  void enqueue_flow_stat(FlowStatRow row);
+  void enqueue_queue_stat(QueueStatRow row);
 
   Stats stats() const;
 
@@ -138,8 +162,11 @@ private:
   bool write_vehicle_event(const VehicleEventRow &r);
   bool write_conflict_event(const ConflictEventRow &r);
   bool write_track(const TrackRow &r);
+  bool write_flow_stat(const FlowStatRow &r);
+  bool write_queue_stat(const QueueStatRow &r);
 
-  using EventVar = std::variant<VehicleEventRow, ConflictEventRow, TrackRow>;
+  using EventVar = std::variant<VehicleEventRow, ConflictEventRow, TrackRow,
+                                FlowStatRow, QueueStatRow>;
   void enqueue_event(EventVar ev);
 
   Config cfg_;
