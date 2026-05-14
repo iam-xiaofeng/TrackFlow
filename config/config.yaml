@@ -47,3 +47,20 @@ limits:
 
 logging:
   level: "info"
+
+# MySQL (M1: EventWriter 写入交通事件)
+# 密码: scripts/setup_mysql.sh 默认 trackflow_dev_2026
+# 也可改用环境变量, 启动前 sed 替换
+mysql:
+  host: "127.0.0.1"
+  port: 3306
+  user: "trackflow"
+  password: "trackflow_dev_2026"
+  db: "trackflow"
+  max_queue_size: 10000
+
+# TrafficAnalyzer (M1: 默认不挂入 pipeline, 需要时显式加 traffic_analyzer)
+traffic_analyzer:
+  intersection_id: "A001"
+  camera_id: "default"
+  enabled: true

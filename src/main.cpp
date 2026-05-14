@@ -1,3 +1,4 @@
+#include "core/event_writer.hpp"
 #include "core/processor_factory.hpp"
 #include "network/ws_server.hpp"
 #include "utils/config.hpp"
@@ -6,6 +7,7 @@
 #include "processors/byte_tracker.hpp"
 #include "processors/geo_transformer.hpp"
 #include "processors/image_decoder.hpp"
+#include "processors/traffic_analyzer.hpp"
 #include "processors/undistort_processor.hpp"
 #include "processors/yolo_detector.hpp"
 
@@ -155,6 +157,21 @@ int main(int argc, char *argv[]) {
       args.server_config = build_server_config(config);
       fprintf(stderr, "[INFO] Server config defaults: %s\n",
               args.server_config.dump().c_str());
+
+      // 初始化 EventWriter (M1)
+      // 若 config 没有 mysql 段, EventWriter 仍会启动但写入会失败重连;
+      // 不影响主管线。
+      yolo_edge::EventWriter::Config ew_cfg;
+      if (auto sec = config.get_section("mysql"); !sec.empty()) {
+        ew_cfg.host = sec.value("host", ew_cfg.host);
+        ew_cfg.port = sec.value("port", ew_cfg.port);
+        ew_cfg.user = sec.value("user", ew_cfg.user);
+        ew_cfg.password = sec.value("password", ew_cfg.password);
+        ew_cfg.db = sec.value("db", ew_cfg.db);
+        ew_cfg.max_queue_size = sec.value("max_queue_size", ew_cfg.max_queue_size);
+      }
+      yolo_edge::EventWriter::instance().configure(ew_cfg);
+      yolo_edge::EventWriter::instance().start();
     } catch (const std::exception &e) {
       fprintf(stderr, "[WARN] Failed to load config: %s\n", e.what());
     }
@@ -195,5 +212,6 @@ int main(int argc, char *argv[]) {
   }
 
   fprintf(stderr, "[INFO] Server stopped\n");
+  yolo_edge::EventWriter::instance().stop();
   return 0;
 }

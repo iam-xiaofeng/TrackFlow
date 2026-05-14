@@ -34,6 +34,10 @@ find_package(nlohmann_json REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PROJ REQUIRED proj)
 
+# MySQL client (libmysqlclient-dev)
+pkg_check_modules(MYSQL REQUIRED mysqlclient)
+message(STATUS "MySQL client version: ${MYSQL_VERSION}")
+
 # Threads
 find_package(Threads REQUIRED)
 
@@ -93,6 +97,7 @@ include_directories(
 # ============================================================================
 set(CORE_SOURCES
     src/core/processor_factory.cpp
+    src/core/event_writer.cpp
 )
 
 set(PROCESSOR_SOURCES
@@ -102,6 +107,7 @@ set(PROCESSOR_SOURCES
     src/processors/geo_transformer.cpp
     src/processors/undistort_processor.cpp
     src/processors/batch_inference_engine.cpp
+    src/processors/traffic_analyzer.cpp
 )
 
 set(NETWORK_SOURCES
@@ -124,12 +130,20 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     nlohmann_json::nlohmann_json
     ${PROJ_LIBRARIES}
+    ${MYSQL_LIBRARIES}
     ${ONNXRUNTIME_LIBRARIES}
     ${USOCKETS_LIBRARY}
     Threads::Threads
     ssl
     crypto
     z
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${MYSQL_INCLUDE_DIRS}
+)
+target_link_directories(${PROJECT_NAME} PRIVATE
+    ${MYSQL_LIBRARY_DIRS}
 )
 
 # RPATH设置 (用于找到ONNX Runtime动态库)
