@@ -145,9 +145,21 @@
         .lane-item .lane-hdr{display:flex;align-items:center;gap:.8rem;margin-bottom:.6rem}
         .lane-item .lane-name{font-weight:600;font-size:1.3rem;flex:1}
         .lane-item .lane-color{width:1.4rem;height:1.4rem;border-radius:.3rem}
+        .lane-roi-row{display:flex;gap:.4rem;margin-bottom:.4rem;align-items:center}
+        .lane-roi-row label{font-size:1.1rem;color:var(--text3);margin-right:.2rem}
+        .lane-roi-row select{background:var(--bg);color:var(--text);border:1px solid var(--border-s);border-radius:.4rem;padding:.3rem .5rem;font-size:1.1rem;font-family:inherit}
+        .lane-roi-row .roi-id{font-family:var(--mono);font-size:1rem;color:var(--text2);margin-left:auto;background:var(--hover);padding:.2rem .5rem;border-radius:.4rem}
         .lane-stat-row{display:flex;gap:.4rem;flex-wrap:wrap}
         .lane-stat{background:var(--hover);border-radius:.6rem;padding:.3rem .8rem;font-size:1rem;color:var(--text2)}
         .lane-stat b{color:var(--text);font-family:var(--mono)}
+
+        /* ── SQL export modal ── */
+        .roi-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center}
+        .roi-modal{background:var(--panel,#1a1a1a);border:1px solid var(--border,#444);border-radius:1rem;padding:1.6rem;max-width:90vw;width:80rem;max-height:85vh;display:flex;flex-direction:column;gap:1rem}
+        .roi-modal h3{margin:0;font-size:1.5rem}
+        .roi-modal textarea{flex:1;min-height:32rem;background:#0d0d0d;color:#dcdcdc;border:1px solid var(--border-s);border-radius:.5rem;padding:1rem;font-family:var(--mono);font-size:1.1rem;resize:vertical;white-space:pre;word-wrap:normal;overflow:auto}
+        .roi-modal .modal-actions{display:flex;gap:.8rem;justify-content:flex-end}
+        .roi-modal .modal-warn{color:var(--warn,#fc0);font-size:1.1rem;background:rgba(255,200,0,.1);padding:.5rem .8rem;border-radius:.5rem;border-left:3px solid var(--warn,#fc0)}
 
         input[type="file"]{display:none}
         .hidden{display:none!important}
@@ -286,13 +298,14 @@
 
                 <!-- ── Tab: Lanes ── -->
                 <div class="tab-pane" id="tab-lanes">
-                    <div class="section-title">Lane Configuration</div>
+                    <div class="section-title">Lane / ROI Configuration</div>
                     <div class="toggle-row" style="margin-bottom:.8rem">
                         <label>Enable lane detection</label>
                         <label class="toggle"><input type="checkbox" id="laneToggle" onchange="laneDetectionEnabled=this.checked"><span class="slider"></span></label>
                     </div>
                     <div id="laneList"></div>
                     <button class="btn btn-sm" onclick="addLane()" style="margin-top:.8rem">+ Add Lane</button>
+                    <button class="btn btn-sm btn-g" onclick="exportRoisAsSql()" style="margin-top:.8rem;margin-left:.4rem">Export ROIs as SQL</button>
                 </div>
 
                 <!-- ── Tab: Data ── -->
@@ -1300,13 +1313,30 @@ function addLane(){
     const lid='lane_'+laneCounter;
     lanes[lid]={
         name:'Lane '+laneCounter,
+        roiType:'approach',
+        direction:'north',
         points:[],polygon:null,visible:false,
         vehiclesInside:new Set(),counted:new Set(),
         passCount:0,passTimestamps:[],flowCount:0,queueCount:0,flowRate:0,
         color:laneColors[(laneCounter-1)%laneColors.length]
     };
     renderLaneList();
-    log('Added '+lanes[lid].name+'. Click "Draw" then click on video to add polygon vertices.','success');
+    log('Added '+lanes[lid].name+'. Set Type/Direction, then click "Draw" to add polygon vertices.','success');
+}
+
+function setLaneRoiType(lid,v){
+    if(!lanes[lid])return;
+    lanes[lid].roiType=v;
+    renderLaneList();
+}
+function setLaneDirection(lid,v){
+    if(!lanes[lid])return;
+    lanes[lid].direction=v;
+    renderLaneList();
+}
+function roiIdFor(lane){
+    if(lane.roiType==='center')return 'intersection_center';
+    return lane.direction+'_'+lane.roiType;
 }
 
 function startDrawLane(lid){
@@ -1366,6 +1396,7 @@ function renderLaneList(){
         const isDrawing=drawingLane===lid;
         const div=document.createElement('div');
         div.className='lane-item';
+        const dirDisabled=l.roiType==='center'?'disabled':'';
         div.innerHTML=`
             <div class="lane-hdr">
                 <div class="lane-color" style="background:${l.color}"></div>
@@ -1374,6 +1405,22 @@ function renderLaneList(){
                     :`<button class="btn btn-sm" onclick="startDrawLane('${lid}')">Draw</button>`}
                 <button class="btn btn-sm" onclick="resetLane('${lid}')">Reset</button>
                 <button class="btn btn-sm btn-r" onclick="deleteLane('${lid}')">Del</button>
+            </div>
+            <div class="lane-roi-row">
+                <label>Type</label>
+                <select onchange="setLaneRoiType('${lid}',this.value)">
+                    <option value="approach"${l.roiType==='approach'?' selected':''}>Approach (进口)</option>
+                    <option value="exit"${l.roiType==='exit'?' selected':''}>Exit (出口)</option>
+                    <option value="center"${l.roiType==='center'?' selected':''}>Center (中心)</option>
+                </select>
+                <label>Dir</label>
+                <select onchange="setLaneDirection('${lid}',this.value)" ${dirDisabled}>
+                    <option value="north"${l.direction==='north'?' selected':''}>North</option>
+                    <option value="south"${l.direction==='south'?' selected':''}>South</option>
+                    <option value="east"${l.direction==='east'?' selected':''}>East</option>
+                    <option value="west"${l.direction==='west'?' selected':''}>West</option>
+                </select>
+                <span class="roi-id">${roiIdFor(l)}</span>
             </div>
             <div class="lane-stat-row">
                 <div class="lane-stat">In: <b>${l.flowCount}</b></div>
@@ -1555,6 +1602,90 @@ function exportLaneCSV(){
     }
     downloadCSV(rows,'trackflow_lanes.csv');
     log('Exported lane stats','success');
+}
+
+function exportRoisAsSql(){
+    const intersectionId='A001';
+    const cameraId='default';
+    const valid=[],warnings=[];
+    const idSeen={};
+    let approachCount=0,exitCount=0;
+    for(const lid in lanes){
+        const l=lanes[lid];
+        if(!l.polygon||l.polygon.length<3){
+            warnings.push(`${l.name} skipped — polygon not drawn (need ≥3 points)`);
+            continue;
+        }
+        const id=roiIdFor(l);
+        if(idSeen[id]){
+            warnings.push(`DUPLICATE id "${id}" — ${l.name} overrides ${idSeen[id]}`);
+        }
+        idSeen[id]=l.name;
+        if(l.roiType==='approach')approachCount++;
+        if(l.roiType==='exit')exitCount++;
+        const polyJson=JSON.stringify(l.polygon.map(p=>[Math.round(p[0]),Math.round(p[1])]));
+        valid.push({id,type:l.roiType,polyJson,name:l.name});
+    }
+    if(approachCount===0)warnings.push('NO approach ROI — TrafficAnalyzer cannot lock entry_region, movement will be empty');
+    if(exitCount===0)warnings.push('NO exit ROI — TrafficAnalyzer cannot lock exit_region, movement will be empty');
+    if(valid.length===0){
+        log('No drawn ROIs to export','warn');
+        alert('No drawn ROIs. Draw at least one polygon (≥3 points) first.');
+        return;
+    }
+    // unique by id (last one wins)
+    const byId={};
+    for(const r of valid)byId[r.id]=r;
+    const finalRows=Object.values(byId);
+    const valuesSql=finalRows.map(r=>{
+        return `  ('${r.id}', '${intersectionId}', '${cameraId}', '${r.type}', '${r.polyJson}')`;
+    }).join(',\n');
+    const header=[
+        `-- TrackFlow ROI snapshot for intersection ${intersectionId}`,
+        `-- Generated: ${new Date().toISOString()}`,
+        `-- Video native resolution: ${cvs.width}x${cvs.height}`,
+        `-- ROI count: ${finalRows.length} (approach=${approachCount}, exit=${exitCount}, total drawn=${valid.length})`,
+    ];
+    for(const w of warnings)header.push(`-- WARN: ${w}`);
+    const sql=header.join('\n')+'\n\n'+
+        `DELETE FROM roi_configs WHERE intersection_id='${intersectionId}';\n\n`+
+        `INSERT INTO roi_configs (id, intersection_id, camera_id, type, polygon_json) VALUES\n`+
+        valuesSql+';\n';
+    showRoiSqlModal(sql,warnings);
+    log(`Exported ${finalRows.length} ROIs as SQL`,'success');
+}
+
+function showRoiSqlModal(sql,warnings){
+    const existing=document.getElementById('roiSqlModal');
+    if(existing)existing.remove();
+    const backdrop=document.createElement('div');
+    backdrop.className='roi-modal-backdrop';
+    backdrop.id='roiSqlModal';
+    const warnHtml=warnings.length?`<div class="modal-warn">⚠ ${warnings.length} warning(s) — see SQL comments at top</div>`:'';
+    backdrop.innerHTML=`
+        <div class="roi-modal">
+            <h3>ROI SQL — copy and paste back to chat</h3>
+            ${warnHtml}
+            <textarea id="roiSqlText" spellcheck="false" readonly></textarea>
+            <div class="modal-actions">
+                <button class="btn btn-sm" onclick="document.getElementById('roiSqlModal').remove()">Close</button>
+                <button class="btn btn-sm btn-g" id="roiSqlCopyBtn">Copy to Clipboard</button>
+            </div>
+        </div>`;
+    document.body.appendChild(backdrop);
+    document.getElementById('roiSqlText').value=sql;
+    document.getElementById('roiSqlCopyBtn').onclick=async()=>{
+        const ta=document.getElementById('roiSqlText');
+        try{
+            await navigator.clipboard.writeText(ta.value);
+            document.getElementById('roiSqlCopyBtn').textContent='Copied ✓';
+            setTimeout(()=>{const b=document.getElementById('roiSqlCopyBtn');if(b)b.textContent='Copy to Clipboard';},2000);
+        }catch(e){
+            ta.select();document.execCommand('copy');
+            document.getElementById('roiSqlCopyBtn').textContent='Copied (fallback) ✓';
+        }
+    };
+    backdrop.onclick=(e)=>{if(e.target===backdrop)backdrop.remove();};
 }
 
 function downloadCSV(rows,filename){

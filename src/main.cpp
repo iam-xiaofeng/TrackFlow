@@ -43,7 +43,7 @@ yolo_edge::json build_server_config(const yolo_edge::Config &config) {
           {"max_time_lost", 30},
           {"min_hits", 3}}}}},
       {"features",
-       {{"tracker", true}, {"undistort", false}, {"geo_transform", false}}},
+       {{"tracker", true}, {"undistort", false}, {"geo_transform", false}, {"traffic_analyzer", true}}},
       {"limits",
        {{"session_timeout_sec", 300},
         {"max_payload_bytes", 100 * 1024 * 1024},

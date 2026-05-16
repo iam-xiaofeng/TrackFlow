@@ -29,6 +29,7 @@ features:
   tracker: true
   undistort: false
   geo_transform: false
+  traffic_analyzer: true
 
 limits:
   session_timeout_sec: 300

@@ -329,6 +329,7 @@ std::vector<std::string> WebSocketServer::build_pipeline(const json &features,
   const bool enable_geo = features.value("geo_transform", false) &&
                           config.contains("geo_transform") &&
                           has_geo_params(config["geo_transform"]);
+  const bool enable_traffic = features.value("traffic_analyzer", false);
 
   if (enable_undistort) {
     pipeline.push_back("undistort");
@@ -338,6 +339,9 @@ std::vector<std::string> WebSocketServer::build_pipeline(const json &features,
   }
   if (enable_geo) {
     pipeline.push_back("geo_transform");
+  }
+  if (enable_traffic) {
+    pipeline.push_back("traffic_analyzer");
   }
 
   return pipeline;
@@ -349,7 +353,7 @@ json WebSocketServer::build_pipeline_config(const json &request) const {
 
   if (request.contains("features") && request["features"].is_object()) {
     const auto &src = request["features"];
-    for (const char *key : {"tracker", "undistort", "geo_transform"}) {
+    for (const char *key : {"tracker", "undistort", "geo_transform", "traffic_analyzer"}) {
       if (src.contains(key) && src[key].is_boolean()) {
         features[key] = src[key];
       }
@@ -366,6 +370,8 @@ json WebSocketServer::build_pipeline_config(const json &request) const {
         features["undistort"] = true;
       } else if (name == "geo_transform") {
         features["geo_transform"] = true;
+      } else if (name == "traffic_analyzer") {
+        features["traffic_analyzer"] = true;
       }
     }
   }
