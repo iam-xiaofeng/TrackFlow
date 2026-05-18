@@ -127,6 +127,14 @@ set(ALL_SOURCES
 # ============================================================================
 add_executable(${PROJECT_NAME} ${ALL_SOURCES})
 
+# GCC 11 -O3 reassoc pass ICE 在 src/network/ws_server.cpp 触发 (Ubuntu 22.04
+# gcc-11.4.0). 单文件关掉 tree-reassoc 通行, 性能影响微乎其微.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+   AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
+  set_source_files_properties(src/network/ws_server.cpp
+    PROPERTIES COMPILE_OPTIONS "-fno-tree-reassoc")
+endif()
+
 target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     nlohmann_json::nlohmann_json
